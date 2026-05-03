@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import glob
+import plistlib
 from datetime import datetime
 
 HOME = os.path.expanduser("~")
@@ -179,6 +180,116 @@ def grosse_dateien_suchen(min_mb=100):
 
     print(f"\n  {len(gefunden)} Dateien gefunden (zeige max. 20)")
 
+def brew_cache_bereinigen():
+    print("\nHomebrew-Cache bereinigen ...\n")
+    brew = shutil.which("brew")
+    if not brew:
+        print("  Homebrew nicht installiert.")
+        return
+
+    ergebnis = subprocess.run([brew, "cleanup", "--dry-run"], capture_output=True, text=True)
+    zeilen = [z for z in ergebnis.stdout.splitlines() if z.strip() and not z.startswith("==>")]
+    if not zeilen:
+        print("  Homebrew-Cache ist bereits leer.")
+        return
+
+    print(f"  {len(zeilen)} Eintraege gefunden:\n")
+    for z in zeilen[:20]:
+        print(f"    {z.strip()}")
+    if len(zeilen) > 20:
+        print(f"    ... ({len(zeilen) - 20} weitere)")
+
+    antwort = input("\n  Homebrew-Cache jetzt leeren? (j/n): ").strip().lower()
+    if antwort == "j":
+        subprocess.run([brew, "cleanup"], capture_output=False)
+        print("  Homebrew-Cache geleert.")
+    else:
+        print("  Nichts geloescht.")
+
+def browser_cache_bereinigen():
+    print("\nBrowser-Caches bereinigen ...\n")
+
+    browser_caches = [
+        ("Safari",   "~/Library/Caches/com.apple.Safari"),
+        ("Chrome",   "~/Library/Caches/Google/Chrome"),
+        ("Firefox",  "~/Library/Caches/Firefox"),
+        ("Arc",      "~/Library/Caches/Arc"),
+        ("Brave",    "~/Library/Caches/BraveSoftware"),
+        ("Edge",     "~/Library/Caches/Microsoft Edge"),
+        ("Opera",    "~/Library/Caches/com.operasoftware.Opera"),
+        ("Vivaldi",  "~/Library/Caches/Vivaldi"),
+        ("Chromium", "~/Library/Caches/Chromium"),
+    ]
+
+    gefunden = []
+    for browser, pfad_tmpl in browser_caches:
+        pfad = os.path.expanduser(pfad_tmpl)
+        if os.path.exists(pfad):
+            groesse = ordner_groesse(pfad)
+            gefunden.append((browser, groesse, pfad))
+
+    if not gefunden:
+        print("  Keine Browser-Caches gefunden.")
+        return
+
+    total = sum(g for _, g, _ in gefunden)
+    print(f"  {'Browser':<12} Groesse")
+    print(f"  {'-'*40}")
+    for browser, groesse, _ in gefunden:
+        print(f"  {browser:<12} {bytes_lesbar(groesse)}")
+    print(f"\n  Total: {bytes_lesbar(total)}")
+
+    antwort = input("\n  Alle Browser-Caches loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        for browser, groesse, pfad in gefunden:
+            try:
+                shutil.rmtree(pfad)
+                print(f"  Geloescht: {browser} ({bytes_lesbar(groesse)})")
+            except Exception as e:
+                print(f"  Fehler bei {browser}: {e}")
+        print(f"\n  {bytes_lesbar(total)} freigegeben.")
+    else:
+        print("  Nichts geloescht.")
+
+def ios_backups_anzeigen():
+    print("\niOS-Backups analysieren ...\n")
+    backup_pfad = os.path.expanduser("~/Library/Application Support/MobileSync/Backup")
+    if not os.path.exists(backup_pfad):
+        print("  Keine iOS-Backups gefunden.")
+        return
+
+    backups = [d for d in os.listdir(backup_pfad)
+               if os.path.isdir(os.path.join(backup_pfad, d))]
+    if not backups:
+        print("  Keine iOS-Backups gefunden.")
+        return
+
+    total = 0
+    print(f"  {'Groesse':<12} {'Datum':<14} Backup-ID")
+    print(f"  {'-'*60}")
+    for backup_id in sorted(backups):
+        pfad = os.path.join(backup_pfad, backup_id)
+        groesse = ordner_groesse(pfad)
+        total += groesse
+        mtime = os.path.getmtime(pfad)
+        datum = datetime.fromtimestamp(mtime).strftime("%d.%m.%Y")
+
+        # Gerätename aus Info.plist lesen falls vorhanden
+        info_plist = os.path.join(pfad, "Info.plist")
+        geraet = backup_id[:8]
+        if os.path.exists(info_plist):
+            try:
+                with open(info_plist, "rb") as f:
+                    info = plistlib.load(f)
+                geraet = info.get("Device Name", geraet)
+            except Exception:
+                pass
+
+        print(f"  {bytes_lesbar(groesse):<12} {datum:<14} {geraet}")
+
+    print(f"\n  Total: {bytes_lesbar(total)} in {len(backups)} Backup(s)")
+    print("  Tipp: Alte Backups loeschen in Finder > Mac-Name > Verwalten.")
+
 def papierkorb_leeren():
     print("\nPapierkorb wird analysiert ...\n")
     trash = os.path.join(HOME, ".Trash")
@@ -210,6 +321,53 @@ def papierkorb_leeren():
         print("  Nichts geloescht.")
 
 # ── LEISTUNG ──────────────────────────────────────────────────────────────────
+
+def defekte_launch_agenten_entfernen():
+    print("\nDefekte LaunchAgents suchen ...\n")
+    agents_pfad = os.path.join(HOME, "Library", "LaunchAgents")
+    if not os.path.exists(agents_pfad):
+        print("  Keine LaunchAgents gefunden.")
+        return
+
+    defekte = []
+    for datei in sorted(os.listdir(agents_pfad)):
+        if not datei.endswith(".plist"):
+            continue
+        pfad = os.path.join(agents_pfad, datei)
+        try:
+            with open(pfad, "rb") as f:
+                plist = plistlib.load(f)
+            programm = None
+            if "Program" in plist:
+                programm = plist["Program"]
+            elif "ProgramArguments" in plist:
+                args = plist["ProgramArguments"]
+                if args:
+                    programm = args[0]
+            if programm and not os.path.exists(programm):
+                defekte.append((datei, pfad, programm))
+        except Exception:
+            pass
+
+    if not defekte:
+        print("  Alle LaunchAgents sind in Ordnung.")
+        return
+
+    print(f"  {len(defekte)} defekte LaunchAgents gefunden:\n")
+    for datei, _, programm in defekte:
+        print(f"  • {datei}")
+        print(f"    Programm fehlt: {programm}")
+
+    antwort = input("\n  Defekte LaunchAgents loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        for datei, pfad, _ in defekte:
+            try:
+                os.remove(pfad)
+                print(f"  Geloescht: {datei}")
+            except Exception as e:
+                print(f"  Fehler bei {datei}: {e}")
+    else:
+        print("  Nichts geloescht.")
 
 def login_objekte_anzeigen():
     print("\nLogin-Objekte (starten beim Anmelden) ...\n")
@@ -390,6 +548,9 @@ def submenu_bereinigung():
         print("  1  App-Reste suchen und loeschen")
         print("  2  Grosse Dateien suchen (> 100 MB)")
         print("  3  Papierkorb leeren")
+        print("  4  Homebrew-Cache bereinigen")
+        print("  5  Browser-Caches bereinigen")
+        print("  6  iOS-Backups anzeigen")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -399,6 +560,12 @@ def submenu_bereinigung():
             grosse_dateien_suchen()
         elif auswahl == "3":
             papierkorb_leeren()
+        elif auswahl == "4":
+            brew_cache_bereinigen()
+        elif auswahl == "5":
+            browser_cache_bereinigen()
+        elif auswahl == "6":
+            ios_backups_anzeigen()
         elif auswahl == "0":
             break
         else:
@@ -410,16 +577,19 @@ def submenu_leistung():
         print("  LEISTUNG")
         print("-"*50)
         print("  1  Login-Objekte anzeigen")
-        print("  2  Entwickler-Cache bereinigen  (Xcode, Simulatoren)")
-        print("  3  Downloads-Ordner analysieren")
+        print("  2  Defekte LaunchAgents entfernen")
+        print("  3  Entwickler-Cache bereinigen  (Xcode, Simulatoren)")
+        print("  4  Downloads-Ordner analysieren")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
         if auswahl == "1":
             login_objekte_anzeigen()
         elif auswahl == "2":
-            entwickler_cache_bereinigen()
+            defekte_launch_agenten_entfernen()
         elif auswahl == "3":
+            entwickler_cache_bereinigen()
+        elif auswahl == "4":
             downloads_analysieren()
         elif auswahl == "0":
             break
@@ -453,9 +623,9 @@ def hauptmenu():
     print("  mac-cleaner")
     print("="*50)
     print("  1  Bereinigung")
-    print("     App-Reste, grosse Dateien, Papierkorb")
+    print("     App-Reste, Dateien, Papierkorb, Brew, Browser, iOS-Backups")
     print("  2  Leistung")
-    print("     Login-Objekte, Entwickler-Cache, Downloads")
+    print("     Login-Objekte, LaunchAgents, Entwickler-Cache, Downloads")
     print("  3  Wartung                         [sudo]")
     print("     DNS, Spotlight, macOS-Skripte")
     print("  0  Beenden")
