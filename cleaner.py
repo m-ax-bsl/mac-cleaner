@@ -643,6 +643,129 @@ def app_deinstallieren():
     else:
         print("  Nichts geloescht.")
 
+def paketmanager_cache_bereinigen():
+    print("\nPaketmanager-Caches analysieren ...\n")
+
+    kandidaten = [
+        ("npm",      "~/.npm/_cacache"),
+        ("yarn",     "~/.yarn/cache"),
+        ("pip",      "~/Library/Caches/pip"),
+        ("gem",      "~/.gem/ruby"),
+        ("Composer", "~/.composer/cache"),
+        ("Cargo",    "~/.cargo/registry/cache"),
+        ("Maven",    "~/.m2/repository"),
+        ("Gradle",   "~/.gradle/caches"),
+        ("Pub",      "~/.pub-cache"),
+    ]
+
+    loeschbar = []
+    for label, pfad_tmpl in kandidaten:
+        pfad = os.path.expanduser(pfad_tmpl)
+        if not os.path.exists(pfad):
+            continue
+        groesse = ordner_groesse(pfad)
+        kurz = pfad.replace(HOME, "~")
+        print(f"  {label:<12} {bytes_lesbar(groesse):<12} {kurz}")
+        loeschbar.append((label, groesse, pfad))
+
+    if not loeschbar:
+        print("  Keine Paketmanager-Caches gefunden.")
+        return
+
+    total = sum(g for _, g, _ in loeschbar)
+    print(f"\n  Total: {bytes_lesbar(total)}")
+
+    antwort = input("\n  Alle Paketmanager-Caches loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        for label, groesse, pfad in loeschbar:
+            try:
+                shutil.rmtree(pfad)
+                print(f"  Geloescht: {label} ({bytes_lesbar(groesse)})")
+            except Exception as e:
+                print(f"  Fehler bei {label}: {e}")
+        print(f"\n  {bytes_lesbar(total)} freigegeben.")
+    else:
+        print("  Nichts geloescht.")
+
+def alte_dateien_suchen(min_tage=365):
+    print(f"\nDateien suchen die seit mehr als {min_tage} Tagen nicht veraendert wurden ...\n")
+    grenze = datetime.now().timestamp() - min_tage * 86400
+    gefunden = []
+
+    for wurzel, ordner, dateien in os.walk(HOME):
+        ordner[:] = [o for o in ordner if not o.startswith(".")
+                     and o not in ["Library", "Applications"]]
+        for datei in dateien:
+            try:
+                pfad = os.path.join(wurzel, datei)
+                if os.path.islink(pfad):
+                    continue
+                mtime = os.path.getmtime(pfad)
+                if mtime < grenze:
+                    groesse = os.path.getsize(pfad)
+                    alter_tage = (datetime.now().timestamp() - mtime) / 86400
+                    gefunden.append((groesse, alter_tage, pfad))
+            except (OSError, PermissionError):
+                pass
+
+    if not gefunden:
+        print("  Keine alten Dateien gefunden.")
+        return
+
+    gefunden.sort(reverse=True)
+    total = sum(g for g, _, _ in gefunden)
+    print(f"  {len(gefunden)} Dateien, {bytes_lesbar(total)} gesamt\n")
+    print(f"  {'Groesse':<12} {'Alter':<10} Datei")
+    print(f"  {'-'*60}")
+    for groesse, tage, pfad in gefunden[:25]:
+        jahre = tage / 365
+        alter_str = f"{jahre:.1f}y"
+        print(f"  {bytes_lesbar(groesse):<12} {alter_str:<10} {pfad.replace(HOME, '~')}")
+    if len(gefunden) > 25:
+        print(f"  ... ({len(gefunden) - 25} weitere nicht angezeigt)")
+    print(f"\n  Tipp: Pruefe ob diese Dateien noch benoetigt werden.")
+
+def mail_analysieren():
+    print("\nMail-Ordner analysieren ...\n")
+
+    mail_pfad = os.path.join(HOME, "Library", "Mail")
+    if not os.path.exists(mail_pfad):
+        print("  Kein Mail-Ordner gefunden.")
+        return
+
+    # Gesamtgroesse Mail-Store
+    print("  Berechne Groesse (kann einen Moment dauern) ...")
+    total = ordner_groesse(mail_pfad)
+    print(f"\n  Mail-Store gesamt: {bytes_lesbar(total)}")
+
+    # Einzelne Accounts
+    v_ordner = sorted(
+        [d for d in os.listdir(mail_pfad)
+         if os.path.isdir(os.path.join(mail_pfad, d)) and d.startswith("V")],
+        reverse=True
+    )
+    if v_ordner:
+        v_pfad = os.path.join(mail_pfad, v_ordner[0])
+        accounts = [d for d in os.listdir(v_pfad)
+                    if os.path.isdir(os.path.join(v_pfad, d))]
+        if accounts:
+            print(f"\n  Accounts ({v_ordner[0]}):")
+            account_groessen = []
+            for acc in accounts:
+                groesse = ordner_groesse(os.path.join(v_pfad, acc))
+                account_groessen.append((groesse, acc))
+            for groesse, acc in sorted(account_groessen, reverse=True):
+                print(f"  {bytes_lesbar(groesse):<12} {acc}")
+
+    # Downloads-Ordner
+    downloads = os.path.join(HOME, "Library", "Mail Downloads")
+    if os.path.exists(downloads):
+        dl_groesse = ordner_groesse(downloads)
+        print(f"\n  Mail Downloads: {bytes_lesbar(dl_groesse)}")
+
+    print("\n  Tipp: Geloeschte Mails bereinigen in")
+    print("  Mail > Postfach > Geloeschte Objekte entfernen.")
+
 # ── WARTUNG ───────────────────────────────────────────────────────────────────
 
 def _sudo_ausfuehren(args, beschreibung):
@@ -702,6 +825,7 @@ def submenu_bereinigung():
         print("  5  Browser-Caches bereinigen")
         print("  6  iOS-Backups anzeigen")
         print("  7  Gespeicherte App-Zustaende bereinigen")
+        print("  8  Paketmanager-Caches bereinigen  (npm, pip, yarn ...)")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -719,6 +843,8 @@ def submenu_bereinigung():
             ios_backups_anzeigen()
         elif auswahl == "7":
             gespeicherte_zustaende_bereinigen()
+        elif auswahl == "8":
+            paketmanager_cache_bereinigen()
         elif auswahl == "0":
             break
         else:
@@ -735,6 +861,8 @@ def submenu_leistung():
         print("  4  Downloads-Ordner analysieren")
         print("  5  Festplattennutzung anzeigen")
         print("  6  App deinstallieren")
+        print("  7  Alte Dateien suchen  (> 1 Jahr nicht veraendert)")
+        print("  8  Mail-Ordner analysieren")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -750,6 +878,10 @@ def submenu_leistung():
             festplattennutzung_anzeigen()
         elif auswahl == "6":
             app_deinstallieren()
+        elif auswahl == "7":
+            alte_dateien_suchen()
+        elif auswahl == "8":
+            mail_analysieren()
         elif auswahl == "0":
             break
         else:
