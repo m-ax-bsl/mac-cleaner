@@ -149,7 +149,7 @@ def app_reste_suchen():
             print(f"  {bytes_lesbar(groesse):<12} {kurz}")
         print(f"\n  Total: {bytes_lesbar(total)} — nicht automatisch geloescht.")
 
-def grosse_dateien_suchen(min_mb=500):
+def grosse_dateien_suchen(min_mb=100):
     print(f"\nSuche Dateien groesser als {min_mb} MB ...\n")
     gefunden = []
     min_bytes = min_mb * 1024 * 1024
@@ -388,7 +388,7 @@ def submenu_bereinigung():
         print("  BEREINIGUNG")
         print("-"*50)
         print("  1  App-Reste suchen und loeschen")
-        print("  2  Grosse Dateien suchen (> 500 MB)")
+        print("  2  Grosse Dateien suchen (> 100 MB)")
         print("  3  Papierkorb leeren")
         print("  0  Zurueck")
         print("-"*50)
