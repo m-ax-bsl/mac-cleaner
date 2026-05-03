@@ -866,6 +866,319 @@ def installer_dateien_suchen():
         print("  Nichts geloescht.")
 
 
+def virtuelle_maschinen_suchen():
+    print("\nVirtuelle Maschinen und Disk-Images suchen ...\n")
+    print("  Analysiere Home-Verzeichnis ...")
+
+    VM_ENDUNGEN = {".vmwarevm", ".pvm", ".vhd", ".vmdk", ".vdi", ".hdd",
+                   ".qcow2", ".qcow", ".ovf", ".ova"}
+
+    gefunden = []
+    for wurzel, ordner, dateien in os.walk(HOME):
+        # Bundles wie .vmwarevm direkt erkennen
+        for name in list(ordner):
+            _, ext = os.path.splitext(name.lower())
+            if ext in VM_ENDUNGEN:
+                pfad = os.path.join(wurzel, name)
+                groesse = ordner_groesse(pfad)
+                mtime = os.path.getmtime(pfad)
+                alter_tage = (datetime.now().timestamp() - mtime) / 86400
+                gefunden.append((groesse, alter_tage, pfad))
+                ordner.remove(name)
+        # Einzelne Disk-Image-Dateien
+        for datei in dateien:
+            _, ext = os.path.splitext(datei.lower())
+            if ext in VM_ENDUNGEN:
+                pfad = os.path.join(wurzel, datei)
+                try:
+                    groesse = os.path.getsize(pfad)
+                    mtime = os.path.getmtime(pfad)
+                    alter_tage = (datetime.now().timestamp() - mtime) / 86400
+                    gefunden.append((groesse, alter_tage, pfad))
+                except (OSError, PermissionError):
+                    pass
+
+    if not gefunden:
+        print("  Keine virtuellen Maschinen oder Disk-Images gefunden.")
+        return
+
+    gefunden.sort(reverse=True)
+    total = sum(g for g, _, _ in gefunden)
+    print(f"  {len(gefunden)} Eintraege, {bytes_lesbar(total)} gesamt\n")
+    print(f"  {'Groesse':<12} {'Alter':<10} Datei")
+    print(f"  {'-'*60}")
+    for groesse, tage, pfad in gefunden:
+        alter_str = f"{int(tage)}d" if tage < 365 else f"{tage/365:.1f}y"
+        print(f"  {bytes_lesbar(groesse):<12} {alter_str:<10} {pfad.replace(HOME, '~')}")
+    print("\n  Tipp: Nicht mehr benoetigte VMs koennen sicher geloescht werden.")
+
+
+def archive_analysieren():
+    print("\nArchive und komprimierte Dateien suchen ...\n")
+    print("  Analysiere Home-Verzeichnis ...")
+
+    ENDUNGEN = {".zip", ".tar", ".gz", ".bz2", ".xz", ".rar", ".7z",
+                ".tgz", ".tbz2", ".tar.gz", ".tar.bz2"}
+
+    gefunden = []
+    for wurzel, ordner, dateien in os.walk(HOME):
+        ordner[:] = [o for o in ordner if not o.startswith(".")
+                     and o not in ["Library", "Applications"]]
+        for datei in dateien:
+            name_lower = datei.lower()
+            if not any(name_lower.endswith(ext) for ext in ENDUNGEN):
+                continue
+            pfad = os.path.join(wurzel, datei)
+            try:
+                groesse = os.path.getsize(pfad)
+                mtime = os.path.getmtime(pfad)
+                alter_tage = (datetime.now().timestamp() - mtime) / 86400
+                gefunden.append((groesse, alter_tage, pfad))
+            except (OSError, PermissionError):
+                pass
+
+    if not gefunden:
+        print("  Keine Archive gefunden.")
+        return
+
+    gefunden.sort(reverse=True)
+    total = sum(g for g, _, _ in gefunden)
+    print(f"  {len(gefunden)} Archive, {bytes_lesbar(total)} gesamt\n")
+    print(f"  {'Groesse':<12} {'Alter':<10} Datei")
+    print(f"  {'-'*60}")
+    for groesse, tage, pfad in gefunden[:25]:
+        alter_str = f"{int(tage)}d" if tage < 365 else f"{tage/365:.1f}y"
+        print(f"  {bytes_lesbar(groesse):<12} {alter_str:<10} {pfad.replace(HOME, '~')}")
+    if len(gefunden) > 25:
+        print(f"  ... ({len(gefunden) - 25} weitere)")
+
+    alte = [(g, t, p) for g, t, p in gefunden if t > 180]
+    if alte:
+        alte_total = sum(g for g, _, _ in alte)
+        print(f"\n  {len(alte)} Archive aelter als 6 Monate ({bytes_lesbar(alte_total)})")
+
+    antwort = input("\n  Alle Archive loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        for _, _, pfad in gefunden:
+            try:
+                os.remove(pfad)
+                print(f"  Geloescht: {pfad.replace(HOME, '~')}")
+            except Exception as e:
+                print(f"  Fehler: {e}")
+        print(f"\n  {bytes_lesbar(total)} freigegeben.")
+    else:
+        print("  Nichts geloescht.")
+
+
+def user_caches_analysieren():
+    print("\nUser-Caches analysieren ...\n")
+    caches_pfad = os.path.join(HOME, "Library", "Caches")
+    if not os.path.exists(caches_pfad):
+        print("  Kein Caches-Ordner gefunden.")
+        return
+
+    print("  Berechne Groessen ...")
+    eintraege = []
+    try:
+        for name in sorted(os.listdir(caches_pfad)):
+            pfad = os.path.join(caches_pfad, name)
+            groesse = ordner_groesse(pfad)
+            eintraege.append((groesse, name, pfad))
+    except PermissionError:
+        pass
+
+    eintraege.sort(reverse=True)
+    total = sum(g for g, _, _ in eintraege)
+    print(f"  {len(eintraege)} Eintraege, {bytes_lesbar(total)} gesamt\n")
+    print(f"  {'Groesse':<12} Cache")
+    print(f"  {'-'*55}")
+    for groesse, name, _ in eintraege[:25]:
+        print(f"  {bytes_lesbar(groesse):<12} {name}")
+    if len(eintraege) > 25:
+        print(f"  ... ({len(eintraege) - 25} weitere)")
+
+    apps = installierte_apps()
+    loeschbar = [
+        (g, n, p) for g, n, p in eintraege
+        if not ist_systemdatei(n) and ist_app_rest(n, apps)
+    ]
+    if loeschbar:
+        loeschbar_total = sum(g for g, _, _ in loeschbar)
+        print(f"\n  Nicht installierte Apps: {len(loeschbar)} Caches ({bytes_lesbar(loeschbar_total)})")
+        antwort = input("  Diese Caches loeschen? (j/n): ").strip().lower()
+        if antwort == "j":
+            for groesse, name, pfad in loeschbar:
+                try:
+                    if os.path.isdir(pfad):
+                        shutil.rmtree(pfad)
+                    else:
+                        os.remove(pfad)
+                    print(f"  Geloescht: {name} ({bytes_lesbar(groesse)})")
+                except Exception as e:
+                    print(f"  Fehler bei {name}: {e}")
+            print(f"\n  {bytes_lesbar(loeschbar_total)} freigegeben.")
+        else:
+            print("  Nichts geloescht.")
+    else:
+        print("\n  Alle Caches gehoeren installierten Apps.")
+
+
+def schriften_analysieren():
+    print("\nSchriften analysieren ...\n")
+
+    schrift_orte = [
+        ("Benutzer",  os.path.join(HOME, "Library", "Fonts")),
+        ("System",    "/Library/Fonts"),
+        ("macOS",     "/System/Library/Fonts"),
+    ]
+
+    alle_schriften = {}
+    for label, pfad in schrift_orte:
+        if not os.path.exists(pfad):
+            continue
+        try:
+            dateien = [f for f in os.listdir(pfad)
+                       if f.lower().endswith((".ttf", ".otf", ".ttc", ".dfont", ".woff", ".woff2"))]
+        except PermissionError:
+            dateien = []
+        groesse = sum(
+            os.path.getsize(os.path.join(pfad, f))
+            for f in dateien
+            if not os.path.islink(os.path.join(pfad, f))
+        )
+        print(f"  {label:<12} {len(dateien):>4} Schriften  {bytes_lesbar(groesse)}")
+        for f in dateien:
+            name_ohne_ext = os.path.splitext(f)[0].lower()
+            alle_schriften.setdefault(name_ohne_ext, []).append(os.path.join(pfad, f))
+
+    # Duplikate (gleicher Name in mehreren Ordnern)
+    duplikate = {n: pfade for n, pfade in alle_schriften.items() if len(pfade) > 1}
+    if duplikate:
+        print(f"\n  {len(duplikate)} Schriften in mehreren Ordnern:\n")
+        for name, pfade in sorted(duplikate.items())[:10]:
+            print(f"  {name}")
+            for p in pfade:
+                print(f"    {p.replace(HOME, '~')}")
+
+    # Benutzer-Schriften anzeigen
+    benutzer_pfad = os.path.join(HOME, "Library", "Fonts")
+    if os.path.exists(benutzer_pfad):
+        try:
+            user_fonts = sorted([f for f in os.listdir(benutzer_pfad)
+                                 if f.lower().endswith((".ttf", ".otf", ".ttc", ".dfont"))])
+            if user_fonts:
+                print(f"\n  Eigene Schriften (~{benutzer_pfad.replace(HOME, '~')}):")
+                for f in user_fonts[:20]:
+                    groesse = os.path.getsize(os.path.join(benutzer_pfad, f))
+                    print(f"  {bytes_lesbar(groesse):<10} {f}")
+                if len(user_fonts) > 20:
+                    print(f"  ... ({len(user_fonts) - 20} weitere)")
+        except PermissionError:
+            pass
+
+
+def browser_erweiterungen():
+    print("\nBrowser-Erweiterungen anzeigen ...\n")
+
+    def msg_auflösen(verzeichnis, schluessel):
+        import json, re
+        m = re.match(r"^__MSG_(.+?)__$", schluessel)
+        if not m:
+            return schluessel
+        msg_key = m.group(1)
+        for lang in ["en", "de", "en_US"]:
+            mp = os.path.join(verzeichnis, "_locales", lang, "messages.json")
+            if not os.path.exists(mp):
+                continue
+            try:
+                with open(mp, encoding="utf-8", errors="ignore") as f:
+                    msgs = json.load(f)
+                for k, v in msgs.items():
+                    if k.lower() == msg_key.lower():
+                        return v.get("message", schluessel)
+            except Exception:
+                pass
+        return schluessel
+
+    def manifest_lesen(verzeichnis):
+        import json
+        for manifest in ["manifest.json", "Info.plist"]:
+            mp = os.path.join(verzeichnis, manifest)
+            if not os.path.exists(mp):
+                continue
+            try:
+                if manifest.endswith(".json"):
+                    with open(mp, encoding="utf-8", errors="ignore") as f:
+                        data = json.load(f)
+                    name = data.get("name", "")
+                    if name.startswith("__MSG_"):
+                        name = msg_auflösen(verzeichnis, name)
+                    return name, data.get("version", "")
+                else:
+                    with open(mp, "rb") as f:
+                        data = plistlib.load(f)
+                    name = data.get("CFBundleDisplayName") or data.get("CFBundleName", "")
+                    return name, data.get("CFBundleShortVersionString", "")
+            except Exception:
+                pass
+        return "", ""
+
+    def erweiterungen_aus_pfad(pfad, browser):
+        erw = []
+        if not os.path.exists(pfad):
+            return erw
+        try:
+            for ext_id in os.listdir(pfad):
+                ep = os.path.join(pfad, ext_id)
+                if not os.path.isdir(ep):
+                    continue
+                # Chromium: ext_id/version/manifest.json
+                titel, version = manifest_lesen(ep)
+                if not titel:
+                    try:
+                        sub = sorted(os.listdir(ep))
+                        for s in sub:
+                            sp = os.path.join(ep, s)
+                            if os.path.isdir(sp):
+                                titel, version = manifest_lesen(sp)
+                                if titel:
+                                    break
+                    except PermissionError:
+                        pass
+                erw.append((titel or ext_id, version))
+        except PermissionError:
+            pass
+        return erw
+
+    browser_pfade = [
+        ("Chrome",   "~/Library/Application Support/Google/Chrome/Default/Extensions"),
+        ("Brave",    "~/Library/Application Support/BraveSoftware/Brave-Browser/Default/Extensions"),
+        ("Edge",     "~/Library/Application Support/Microsoft Edge/Default/Extensions"),
+        ("Chromium", "~/Library/Application Support/Chromium/Default/Extensions"),
+        ("Firefox",  "~/Library/Application Support/Firefox/Profiles"),
+        ("Safari",   "~/Library/Safari/Extensions"),
+    ]
+
+    gesamt = 0
+    for browser, pfad_tmpl in browser_pfade:
+        pfad = os.path.expanduser(pfad_tmpl)
+        erw = erweiterungen_aus_pfad(pfad, browser)
+        if not erw:
+            continue
+        gesamt += len(erw)
+        print(f"  {browser} ({len(erw)} Erweiterungen):")
+        for titel, version in sorted(erw):
+            v_str = f"  v{version}" if version else ""
+            print(f"    • {titel}{v_str}")
+        print()
+
+    if gesamt == 0:
+        print("  Keine Browser-Erweiterungen gefunden.")
+    else:
+        print(f"  Total: {gesamt} Erweiterungen")
+        print("  Tipp: Unbekannte Erweiterungen in den Browser-Einstellungen deaktivieren.")
+
+
 def paketmanager_cache_bereinigen():
     print("\nPaketmanager-Caches analysieren ...\n")
 
@@ -1568,6 +1881,9 @@ def submenu_bereinigung():
         print("  A  App Store Cache bereinigen")
         print("  B  Crash Reports loeschen")
         print("  C  Installer-Dateien suchen  (.dmg, .pkg, .iso)")
+        print("  D  Virtuelle Maschinen suchen  (.vmwarevm, .pvm, .vhd ...)")
+        print("  E  Archive suchen  (.zip, .tar.gz, .rar ...)")
+        print("  F  User-Caches analysieren")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -1595,6 +1911,12 @@ def submenu_bereinigung():
             crash_reports_bereinigen()
         elif auswahl.upper() == "C":
             installer_dateien_suchen()
+        elif auswahl.upper() == "D":
+            virtuelle_maschinen_suchen()
+        elif auswahl.upper() == "E":
+            archive_analysieren()
+        elif auswahl.upper() == "F":
+            user_caches_analysieren()
         elif auswahl == "0":
             break
         else:
@@ -1617,6 +1939,7 @@ def submenu_leistung():
         print("  A  Leere Ordner finden und loeschen")
         print("  B  Mail-Anhaenge analysieren")
         print("  C  Time Machine Snapshots anzeigen")
+        print("  D  Schriften analysieren")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -1644,6 +1967,8 @@ def submenu_leistung():
             mail_anhaenge_analysieren()
         elif auswahl.upper() == "C":
             time_machine_snapshots()
+        elif auswahl.upper() == "D":
+            schriften_analysieren()
         elif auswahl == "0":
             break
         else:
@@ -1662,6 +1987,7 @@ def submenu_wartung():
         print("  6  RAM freigeben  [sudo]")
         print("  7  Datenschutz-Caches bereinigen")
         print("  8  Netzwerk-Informationen anzeigen")
+        print("  9  Browser-Erweiterungen anzeigen")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -1681,6 +2007,8 @@ def submenu_wartung():
             datenschutz_bereinigen()
         elif auswahl == "8":
             netzwerk_info()
+        elif auswahl == "9":
+            browser_erweiterungen()
         elif auswahl == "0":
             break
         else:

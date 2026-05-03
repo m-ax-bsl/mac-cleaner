@@ -39,6 +39,9 @@ mac-cleaner
 | App Store Cache bereinigen | App Store Download- und StoreKit-Caches löschen |
 | Crash Reports löschen | Entfernt `.crash`-Dateien aus `~/Library/Logs/DiagnosticReports` |
 | Installer-Dateien suchen | Findet `.dmg`, `.pkg`, `.iso`-Dateien im Home-Verzeichnis |
+| Virtuelle Maschinen suchen | Findet `.vmwarevm`, `.pvm`, `.vhd`, `.vmdk`-Dateien |
+| Archive suchen | Findet `.zip`, `.tar.gz`, `.rar`-Dateien, markiert Einträge über 6 Monate |
+| User-Caches analysieren | Zeigt `~/Library/Caches` nach Grösse, löscht Cache von nicht installierten Apps |
 
 ### Leistung
 | Funktion | Beschreibung |
@@ -55,6 +58,7 @@ mac-cleaner
 | Leere Ordner finden | Sucht und löscht leere Verzeichnisse im Home-Ordner |
 | Mail-Anhänge analysieren | Zeigt Grösse und Typ aller heruntergeladenen Mail-Anhänge |
 | Time Machine Snapshots | Listet lokale Time Machine Snapshots, optional löschen |
+| Schriften analysieren | Zeigt installierte Fonts nach Quelle, markiert Duplikate |
 
 ### Wartung
 | Funktion | Beschreibung | sudo |
@@ -67,6 +71,7 @@ mac-cleaner
 | RAM freigeben | Leert den inaktiven RAM-Cache via `purge` | ✓ |
 | Datenschutz-Caches | QuickLook-Vorschau, Recents-Listen, Notification-Cache | |
 | Netzwerk-Informationen | IP, WiFi SSID, DNS-Server, Gateway, TCP-Verbindungen | |
+| Browser-Erweiterungen | Listet installierte Erweiterungen in Chrome, Brave, Edge, Safari | |
 
 ## Sicherheit
 
