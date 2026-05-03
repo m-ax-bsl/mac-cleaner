@@ -6,14 +6,25 @@ import shutil
 
 HOME = os.path.expanduser("~")
 
-# Orte wo Apps Reste hinterlassen
-APP_RESTE_ORTE = [
-    "~/Library/Application Support",
-    "~/Library/Preferences",
+# Caches und Logs sind sicher: werden automatisch neu erstellt
+SICHERE_ORTE = [
     "~/Library/Caches",
     "~/Library/Logs",
-    "~/Library/Containers",
-    "~/Library/Group Containers",
+]
+
+# Application Support und Preferences könnten Benutzerdaten enthalten
+VORSICHT_ORTE = [
+    "~/Library/Application Support",
+    "~/Library/Preferences",
+]
+
+# Containers und Group Containers werden bewusst weggelassen — zu riskant
+
+SYSTEM_PRAEFIXE = [
+    "com.apple.", "com.osxfuse.", "com.openssh.",
+    "apple", "safari", "finder", "dock", "spotlight",
+    "loginwindow", "systempreferences", "facetime",
+    "icloud", "itunes", "music", "photos", "mail",
 ]
 
 def bytes_lesbar(b):
@@ -23,25 +34,132 @@ def bytes_lesbar(b):
         b /= 1024
     return f"{b:.1f} TB"
 
+def installierte_apps():
+    apps = set()
+    for ordner in ["/Applications", os.path.join(HOME, "Applications")]:
+        if os.path.exists(ordner):
+            for name in os.listdir(ordner):
+                if name.endswith(".app"):
+                    apps.add(name.replace(".app", "").lower())
+    return apps
+
+def ist_systemdatei(name):
+    name_lower = name.lower()
+    return any(name_lower.startswith(p.lower()) for p in SYSTEM_PRAEFIXE)
+
+def ordner_groesse(pfad):
+    try:
+        if os.path.isdir(pfad):
+            return sum(
+                os.path.getsize(os.path.join(w, f))
+                for w, _, fs in os.walk(pfad)
+                for f in fs
+                if not os.path.islink(os.path.join(w, f))
+            )
+        return os.path.getsize(pfad)
+    except (OSError, PermissionError):
+        return 0
+
+def ist_app_rest(eintrag, installierte):
+    eintrag_lower = eintrag.lower()
+    return not any(
+        app in eintrag_lower or eintrag_lower in app
+        for app in installierte
+    )
+
+def app_reste_suchen():
+    print("\nSuche App-Reste ...\n")
+    apps = installierte_apps()
+
+    # SICHER: Caches und Logs von nicht installierten Apps
+    sichere_reste = []
+    for ort in SICHERE_ORTE:
+        pfad = os.path.expanduser(ort)
+        if not os.path.exists(pfad):
+            continue
+        try:
+            for eintrag in os.listdir(pfad):
+                if ist_systemdatei(eintrag):
+                    continue
+                if ist_app_rest(eintrag, apps):
+                    voller_pfad = os.path.join(pfad, eintrag)
+                    groesse = ordner_groesse(voller_pfad)
+                    kurz = voller_pfad.replace(HOME, "~")
+                    sichere_reste.append((groesse, kurz, voller_pfad))
+        except PermissionError:
+            pass
+
+    if sichere_reste:
+        sichere_reste.sort(reverse=True)
+        total = sum(g for g, _, _ in sichere_reste)
+        print("  SICHER ZU LOESCHEN (Caches & Logs von deinstallierten Apps)")
+        print(f"  {'Groesse':<12} Pfad")
+        print(f"  {'-'*60}")
+        for groesse, kurz, _ in sichere_reste:
+            print(f"  {bytes_lesbar(groesse):<12} {kurz}")
+        print(f"\n  Total: {bytes_lesbar(total)} in {len(sichere_reste)} Eintraegen")
+
+        antwort = input("\n  Alle sicheren Reste loeschen? (j/n): ").strip().lower()
+        if antwort == "j":
+            for _, _, pfad in sichere_reste:
+                try:
+                    if os.path.isdir(pfad):
+                        shutil.rmtree(pfad)
+                    else:
+                        os.remove(pfad)
+                    print(f"  Geloescht: {pfad.replace(HOME, '~')}")
+                except Exception as e:
+                    print(f"  Fehler bei {pfad.replace(HOME, '~')}: {e}")
+            print(f"\n  {bytes_lesbar(total)} freigegeben.")
+        else:
+            print("  Nichts geloescht.")
+    else:
+        print("  Keine sicheren App-Reste gefunden.")
+
+    # ZUR KONTROLLE: Application Support und Preferences
+    vorsicht_reste = []
+    for ort in VORSICHT_ORTE:
+        pfad = os.path.expanduser(ort)
+        if not os.path.exists(pfad):
+            continue
+        try:
+            for eintrag in os.listdir(pfad):
+                if ist_systemdatei(eintrag):
+                    continue
+                if ist_app_rest(eintrag, apps):
+                    voller_pfad = os.path.join(pfad, eintrag)
+                    groesse = ordner_groesse(voller_pfad)
+                    kurz = voller_pfad.replace(HOME, "~")
+                    vorsicht_reste.append((groesse, kurz, voller_pfad))
+        except PermissionError:
+            pass
+
+    if vorsicht_reste:
+        vorsicht_reste.sort(reverse=True)
+        total = sum(g for g, _, _ in vorsicht_reste)
+        print(f"\n  ZUR KONTROLLE (koennen Benutzerdaten enthalten — bitte selbst pruefen)")
+        print(f"  {'Groesse':<12} Pfad")
+        print(f"  {'-'*60}")
+        for groesse, kurz, _ in vorsicht_reste:
+            print(f"  {bytes_lesbar(groesse):<12} {kurz}")
+        print(f"\n  Total: {bytes_lesbar(total)} — nicht automatisch geloescht.")
+
 def grosse_dateien_suchen(min_mb=500):
-    print(f"\n🔍 Suche Dateien grösser als {min_mb} MB ...\n")
+    print(f"\nSuche Dateien groesser als {min_mb} MB ...\n")
     gefunden = []
     min_bytes = min_mb * 1024 * 1024
-    suchpfade = [HOME]
 
-    for pfad in suchpfade:
-        for wurzel, ordner, dateien in os.walk(pfad):
-            # Systempfade überspringen
-            ordner[:] = [o for o in ordner if not o.startswith('.')
-                         and o not in ["Library", "Applications"]]
-            for datei in dateien:
-                try:
-                    voller_pfad = os.path.join(wurzel, datei)
-                    groesse = os.path.getsize(voller_pfad)
-                    if groesse >= min_bytes:
-                        gefunden.append((groesse, voller_pfad))
-                except (OSError, PermissionError):
-                    pass
+    for wurzel, ordner, dateien in os.walk(HOME):
+        ordner[:] = [o for o in ordner if not o.startswith('.')
+                     and o not in ["Library", "Applications"]]
+        for datei in dateien:
+            try:
+                voller_pfad = os.path.join(wurzel, datei)
+                groesse = os.path.getsize(voller_pfad)
+                if groesse >= min_bytes:
+                    gefunden.append((groesse, voller_pfad))
+            except (OSError, PermissionError):
+                pass
 
     gefunden.sort(reverse=True)
 
@@ -49,76 +167,19 @@ def grosse_dateien_suchen(min_mb=500):
         print("  Keine grossen Dateien gefunden.")
         return
 
-    print(f"  {'Grösse':<12} Datei")
+    print(f"  {'Groesse':<12} Datei")
     print(f"  {'-'*60}")
     for groesse, pfad in gefunden[:20]:
-        kurzer_pfad = pfad.replace(HOME, "~")
-        print(f"  {bytes_lesbar(groesse):<12} {kurzer_pfad}")
+        print(f"  {bytes_lesbar(groesse):<12} {pfad.replace(HOME, '~')}")
 
     print(f"\n  {len(gefunden)} Dateien gefunden (zeige max. 20)")
-
-def app_reste_suchen():
-    print("\n🔍 Suche App-Reste ...\n")
-
-    # Installierte Apps ermitteln
-    installierte = set()
-    for app_ordner in ["/Applications", os.path.join(HOME, "Applications")]:
-        if os.path.exists(app_ordner):
-            for name in os.listdir(app_ordner):
-                if name.endswith(".app"):
-                    installierte.add(name.replace(".app", "").lower())
-
-    reste = []
-    for ort in APP_RESTE_ORTE:
-        pfad = os.path.expanduser(ort)
-        if not os.path.exists(pfad):
-            continue
-        try:
-            for eintrag in os.listdir(pfad):
-                eintrag_lower = eintrag.lower()
-                # Prüfen ob kein installiertes App dazu passt
-                gefunden_app = any(
-                    app in eintrag_lower or eintrag_lower in app
-                    for app in installierte
-                )
-                if not gefunden_app:
-                    voller_pfad = os.path.join(pfad, eintrag)
-                    try:
-                        if os.path.isdir(voller_pfad):
-                            groesse = sum(
-                                os.path.getsize(os.path.join(w, f))
-                                for w, _, fs in os.walk(voller_pfad)
-                                for f in fs
-                                if not os.path.islink(os.path.join(w, f))
-                            )
-                        else:
-                            groesse = os.path.getsize(voller_pfad)
-                        kurzer_pfad = voller_pfad.replace(HOME, "~")
-                        reste.append((groesse, kurzer_pfad, voller_pfad))
-                    except (OSError, PermissionError):
-                        pass
-        except PermissionError:
-            pass
-
-    if not reste:
-        print("  Keine App-Reste gefunden.")
-        return
-
-    reste.sort(reverse=True)
-    print(f"  {'Grösse':<12} Pfad")
-    print(f"  {'-'*60}")
-    for groesse, kurz, _ in reste[:30]:
-        print(f"  {bytes_lesbar(groesse):<12} {kurz}")
-
-    print(f"\n  {len(reste)} mögliche Reste gefunden (zeige max. 30)")
-    print("  Hinweis: Nicht alle sind wirklich Reste — prüfe vor dem Löschen.")
 
 def hauptmenu():
     print("\n" + "="*50)
     print("  mac-cleaner")
     print("="*50)
-    print("  1  Grosse Dateien suchen (> 500 MB)")
-    print("  2  App-Reste suchen")
+    print("  1  App-Reste suchen und loeschen")
+    print("  2  Grosse Dateien suchen (> 500 MB)")
     print("  0  Beenden")
     print("="*50)
     return input("  Auswahl: ").strip()
@@ -127,14 +188,14 @@ def main():
     while True:
         auswahl = hauptmenu()
         if auswahl == "1":
-            grosse_dateien_suchen()
-        elif auswahl == "2":
             app_reste_suchen()
+        elif auswahl == "2":
+            grosse_dateien_suchen()
         elif auswahl == "0":
-            print("\n  Tschüss!\n")
+            print("\n  Tschuess!\n")
             break
         else:
-            print("\n  Ungültige Auswahl.")
+            print("\n  Ungueltige Auswahl.")
 
 if __name__ == "__main__":
     main()
