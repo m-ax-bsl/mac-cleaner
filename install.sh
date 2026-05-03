@@ -2,12 +2,19 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TARGET="/usr/local/bin/mac-cleaner"
+BIN_DIR="$HOME/.local/bin"
+TARGET="$BIN_DIR/mac-cleaner"
 
-if [ ! -d /usr/local/bin ]; then
-    sudo mkdir -p /usr/local/bin
-fi
-
+mkdir -p "$BIN_DIR"
 ln -sf "$SCRIPT_DIR/cleaner.py" "$TARGET"
-echo "Installiert: mac-cleaner -> $TARGET"
-echo "Starte mit: mac-cleaner"
+echo "Installiert: $TARGET"
+
+# ~/.local/bin in PATH eintragen falls noch nicht vorhanden
+ZSHRC="$HOME/.zshrc"
+if ! grep -q '.local/bin' "$ZSHRC" 2>/dev/null; then
+    echo '\nexport PATH="$HOME/.local/bin:$PATH"' >> "$ZSHRC"
+    echo "PATH aktualisiert in ~/.zshrc"
+    echo "Fuehre aus: source ~/.zshrc"
+else
+    echo "Starte mit: mac-cleaner"
+fi
