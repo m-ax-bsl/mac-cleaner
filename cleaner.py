@@ -366,6 +366,10 @@ def spotlight_neu_indizieren():
 
 def wartungsskripte_ausfuehren():
     print("\nmacOS-Wartungsskripte ausfuehren ...\n")
+    if not os.path.exists("/usr/sbin/periodic"):
+        print("  Nicht verfuegbar: 'periodic' wurde in dieser macOS-Version entfernt.")
+        print("  Die Wartungsaufgaben werden automatisch im Hintergrund von launchd verwaltet.")
+        return
     print("  macOS hat eingebaute taegliche, woechentliche und monatliche")
     print("  Wartungsskripte (Log-Rotation, temp. Dateien, etc.).")
     print("  Benoetigt sudo-Rechte. Kann einige Minuten dauern.\n")
