@@ -35,6 +35,8 @@ mac-cleaner
 | iOS-Backups anzeigen | Zeigt Grösse und Datum aller iPhone/iPad-Backups |
 | Gespeicherte App-Zustände | Löscht Fenster-Snapshots aus `~/Library/Saved Application State` |
 | Paketmanager-Caches bereinigen | npm, pip, yarn, gem, Cargo, Maven, Gradle u.a. |
+| Temporäre Dateien bereinigen | `/private/tmp` (eigene Dateien), TemporaryItems, CloudKit-Cache |
+| App Store Cache bereinigen | App Store Download- und StoreKit-Caches löschen |
 
 ### Leistung
 | Funktion | Beschreibung |
@@ -48,6 +50,7 @@ mac-cleaner
 | Alte Dateien suchen | Listet Dateien, die seit über einem Jahr nicht verändert wurden |
 | Mail-Ordner analysieren | Zeigt Grösse des Mail-Stores aufgeteilt nach Accounts |
 | Duplikate suchen | Findet identische Dateien via Grösse + MD5-Hash |
+| Leere Ordner finden | Sucht und löscht leere Verzeichnisse im Home-Ordner |
 
 ### Wartung
 | Funktion | Beschreibung | sudo |
@@ -57,6 +60,8 @@ mac-cleaner
 | macOS-Wartungsaufgaben | LaunchServices-Datenbank neu aufbauen, Schriften-Cache bereinigen | ✓ |
 | System-Informationen | CPU, RAM, Akku, Uptime, Festplattennutzung | |
 | Sprachdateien bereinigen | Entfernt ungenutzte `.lproj`-Ordner aus App-Bundles | |
+| RAM freigeben | Leert den inaktiven RAM-Cache via `purge` | ✓ |
+| Datenschutz-Caches | QuickLook-Vorschau, Recents-Listen, Notification-Cache | |
 
 ## Sicherheit
 

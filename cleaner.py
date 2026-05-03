@@ -644,6 +644,119 @@ def app_deinstallieren():
     else:
         print("  Nichts geloescht.")
 
+def temp_dateien_bereinigen():
+    print("\nTemporaere Dateien bereinigen ...\n")
+
+    kandidaten = [
+        ("TemporaryItems",  "~/Library/Caches/TemporaryItems"),
+        ("CloudKit-Cache",  "~/Library/Caches/CloudKit"),
+        ("FaceTime-Cache",  "~/Library/Caches/com.apple.FaceTime.FTVideoEncoding"),
+    ]
+
+    # /private/tmp: nur eigene Dateien loeschen
+    import getpass
+    username = getpass.getuser()
+    tmp_pfad = "/private/tmp"
+    eigene_tmp = []
+    if os.path.exists(tmp_pfad):
+        try:
+            for name in os.listdir(tmp_pfad):
+                pfad = os.path.join(tmp_pfad, name)
+                try:
+                    import stat
+                    st = os.stat(pfad)
+                    if st.st_uid == os.getuid():
+                        groesse = ordner_groesse(pfad)
+                        eigene_tmp.append((groesse, pfad))
+                except (OSError, PermissionError):
+                    pass
+        except PermissionError:
+            pass
+
+    loeschbar = []
+    for label, pfad_tmpl in kandidaten:
+        pfad = os.path.expanduser(pfad_tmpl)
+        if not os.path.exists(pfad):
+            continue
+        groesse = ordner_groesse(pfad)
+        if groesse == 0:
+            continue
+        kurz = pfad.replace(HOME, "~")
+        print(f"  {label:<22} {bytes_lesbar(groesse):<12} {kurz}")
+        loeschbar.append((label, groesse, pfad))
+
+    if eigene_tmp:
+        tmp_total = sum(g for g, _ in eigene_tmp)
+        print(f"  {'Eigene /tmp-Dateien':<22} {bytes_lesbar(tmp_total):<12} /private/tmp")
+        for groesse, pfad in eigene_tmp:
+            loeschbar.append((os.path.basename(pfad), groesse, pfad))
+
+    if not loeschbar:
+        print("  Keine temporaeren Dateien gefunden.")
+        return
+
+    total = sum(g for _, g, _ in loeschbar)
+    print(f"\n  Total: {bytes_lesbar(total)}")
+
+    antwort = input("\n  Temporaere Dateien loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        for label, groesse, pfad in loeschbar:
+            try:
+                if os.path.isdir(pfad):
+                    shutil.rmtree(pfad)
+                    os.makedirs(pfad, exist_ok=True)
+                else:
+                    os.remove(pfad)
+                print(f"  Geloescht: {label} ({bytes_lesbar(groesse)})")
+            except Exception as e:
+                print(f"  Fehler bei {label}: {e}")
+        print(f"\n  {bytes_lesbar(total)} freigegeben.")
+    else:
+        print("  Nichts geloescht.")
+
+
+def app_store_cache_bereinigen():
+    print("\nApp Store Cache bereinigen ...\n")
+
+    kandidaten = [
+        ("App Store Cache",    "~/Library/Caches/com.apple.appstore"),
+        ("StoreKit Cache",     "~/Library/Caches/com.apple.storekitd"),
+        ("App Store Updates",  "~/Library/Caches/com.apple.SoftwareUpdate"),
+        ("App Store Assets",   "~/Library/Application Support/App Store"),
+    ]
+
+    loeschbar = []
+    for label, pfad_tmpl in kandidaten:
+        pfad = os.path.expanduser(pfad_tmpl)
+        if not os.path.exists(pfad):
+            continue
+        groesse = ordner_groesse(pfad)
+        if groesse == 0:
+            continue
+        kurz = pfad.replace(HOME, "~")
+        print(f"  {label:<25} {bytes_lesbar(groesse):<12} {kurz}")
+        loeschbar.append((label, groesse, pfad))
+
+    if not loeschbar:
+        print("  Keine App Store Caches gefunden.")
+        return
+
+    total = sum(g for _, g, _ in loeschbar)
+    print(f"\n  Total: {bytes_lesbar(total)}")
+
+    antwort = input("\n  App Store Caches loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        for label, groesse, pfad in loeschbar:
+            try:
+                shutil.rmtree(pfad)
+                print(f"  Geloescht: {label} ({bytes_lesbar(groesse)})")
+            except Exception as e:
+                print(f"  Fehler bei {label}: {e}")
+        print(f"\n  {bytes_lesbar(total)} freigegeben.")
+    else:
+        print("  Nichts geloescht.")
+
+
 def paketmanager_cache_bereinigen():
     print("\nPaketmanager-Caches analysieren ...\n")
 
@@ -687,6 +800,70 @@ def paketmanager_cache_bereinigen():
         print(f"\n  {bytes_lesbar(total)} freigegeben.")
     else:
         print("  Nichts geloescht.")
+
+def leere_ordner_finden():
+    print("\nLeere Ordner suchen ...\n")
+    print("  Analysiere Home-Verzeichnis ...")
+
+    BUNDLE_ENDUNGEN = {
+        ".app", ".photoslibrary", ".sparsebundle", ".sparseimage",
+        ".xcodeproj", ".xcworkspace", ".framework", ".kext", ".bundle",
+        ".pages", ".numbers", ".key", ".keynote", ".sketch",
+        ".git", ".svn", ".hg",
+    }
+
+    def pfad_ueberspringen(pfad):
+        teile = pfad.replace(HOME, "").split(os.sep)
+        for teil in teile:
+            if not teil:
+                continue
+            if teil.startswith("."):
+                return True
+            if any(teil.endswith(ext) for ext in BUNDLE_ENDUNGEN):
+                return True
+        return False
+
+    leere = []
+    skip_erste_ebene = {"Library", "Applications", ".Trash"}
+    for wurzel, ordner, dateien in os.walk(HOME, topdown=False):
+        if wurzel == HOME:
+            continue
+        relativ = wurzel.replace(HOME + os.sep, "")
+        erste_ebene = relativ.split(os.sep)[0]
+        if erste_ebene in skip_erste_ebene:
+            continue
+        if pfad_ueberspringen(wurzel):
+            continue
+        try:
+            inhalt = os.listdir(wurzel)
+            if not inhalt:
+                leere.append(wurzel)
+        except PermissionError:
+            pass
+
+    if not leere:
+        print("  Keine leeren Ordner gefunden.")
+        return
+
+    print(f"  {len(leere)} leere Ordner gefunden:\n")
+    for pfad in leere[:30]:
+        print(f"  {pfad.replace(HOME, '~')}")
+    if len(leere) > 30:
+        print(f"  ... ({len(leere) - 30} weitere)")
+
+    antwort = input("\n  Alle leeren Ordner loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        geloescht = 0
+        for pfad in leere:
+            try:
+                os.rmdir(pfad)
+                geloescht += 1
+            except Exception:
+                pass
+        print(f"  {geloescht} leere Ordner geloescht.")
+    else:
+        print("  Nichts geloescht.")
+
 
 def alte_dateien_suchen(min_tage=365):
     print(f"\nDateien suchen die seit mehr als {min_tage} Tagen nicht veraendert wurden ...\n")
@@ -1027,6 +1204,79 @@ def wartungsskripte_ausfuehren():
     if auswahl == "0":
         print("  Abgebrochen.")
 
+def ram_freigeben():
+    print("\nRAM freigeben ...\n")
+
+    def ram_frei():
+        try:
+            vm = subprocess.run(["vm_stat"], capture_output=True, text=True).stdout
+            seitengroesse = 16384
+            def vmwert(schluessel):
+                for zeile in vm.splitlines():
+                    if schluessel in zeile:
+                        return int(''.join(filter(str.isdigit, zeile))) * seitengroesse
+                return 0
+            frei = vmwert("Pages free") + vmwert("Pages speculative")
+            return frei
+        except Exception:
+            return 0
+
+    frei_vorher = ram_frei()
+    print(f"  Freier RAM (vorher): {bytes_lesbar(frei_vorher)}")
+    print("  Fuehre 'purge' aus ...  [sudo]\n")
+    _sudo_ausfuehren(["sudo", "/usr/sbin/purge"], "RAM-Cache geleert")
+    frei_nachher = ram_frei()
+    print(f"\n  Freier RAM (nachher): {bytes_lesbar(frei_nachher)}")
+    gewonnen = frei_nachher - frei_vorher
+    if gewonnen > 0:
+        print(f"  Freigegeben: {bytes_lesbar(gewonnen)}")
+
+
+def datenschutz_bereinigen():
+    print("\nDatensschutz-Caches bereinigen ...\n")
+
+    kandidaten = [
+        ("QuickLook-Vorschau",  "~/Library/Caches/com.apple.QuickLook.thumbnailcache"),
+        ("Recents-Listen",      "~/Library/Application Support/com.apple.sharedfilelist"),
+        ("Kurzbefehl-Vorlagen", "~/Library/Application Support/com.apple.shortcuts"),
+        ("Notification-Cache",  "~/Library/Caches/com.apple.notificationcenter"),
+        ("Siri-Vorschlaege",    "~/Library/Application Support/com.apple.suggestions"),
+    ]
+
+    loeschbar = []
+    for label, pfad_tmpl in kandidaten:
+        pfad = os.path.expanduser(pfad_tmpl)
+        if not os.path.exists(pfad):
+            continue
+        groesse = ordner_groesse(pfad)
+        kurz = pfad.replace(HOME, "~")
+        print(f"  {label:<26} {bytes_lesbar(groesse):<12} {kurz}")
+        loeschbar.append((label, groesse, pfad))
+
+    if not loeschbar:
+        print("  Keine Datenschutz-Caches gefunden.")
+        return
+
+    total = sum(g for _, g, _ in loeschbar)
+    print(f"\n  Total: {bytes_lesbar(total)}")
+    print("  Hinweis: Recents-Listen und QuickLook werden automatisch neu aufgebaut.")
+
+    antwort = input("\n  Datenschutz-Caches loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        for label, groesse, pfad in loeschbar:
+            try:
+                if os.path.isdir(pfad):
+                    shutil.rmtree(pfad)
+                else:
+                    os.remove(pfad)
+                print(f"  Geloescht: {label} ({bytes_lesbar(groesse)})")
+            except Exception as e:
+                print(f"  Fehler bei {label}: {e}")
+        print(f"\n  {bytes_lesbar(total)} freigegeben.")
+    else:
+        print("  Nichts geloescht.")
+
+
 # ── MENUES ────────────────────────────────────────────────────────────────────
 
 def submenu_bereinigung():
@@ -1042,6 +1292,8 @@ def submenu_bereinigung():
         print("  6  iOS-Backups anzeigen")
         print("  7  Gespeicherte App-Zustaende bereinigen")
         print("  8  Paketmanager-Caches bereinigen  (npm, pip, yarn ...)")
+        print("  9  Temporaere Dateien bereinigen")
+        print("  A  App Store Cache bereinigen")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -1061,6 +1313,10 @@ def submenu_bereinigung():
             gespeicherte_zustaende_bereinigen()
         elif auswahl == "8":
             paketmanager_cache_bereinigen()
+        elif auswahl == "9":
+            temp_dateien_bereinigen()
+        elif auswahl.upper() == "A":
+            app_store_cache_bereinigen()
         elif auswahl == "0":
             break
         else:
@@ -1080,6 +1336,7 @@ def submenu_leistung():
         print("  7  Alte Dateien suchen  (> 1 Jahr nicht veraendert)")
         print("  8  Mail-Ordner analysieren")
         print("  9  Duplikate suchen")
+        print("  A  Leere Ordner finden und loeschen")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -1101,6 +1358,8 @@ def submenu_leistung():
             mail_analysieren()
         elif auswahl == "9":
             duplikate_suchen()
+        elif auswahl.upper() == "A":
+            leere_ordner_finden()
         elif auswahl == "0":
             break
         else:
@@ -1116,6 +1375,8 @@ def submenu_wartung():
         print("  3  macOS-Wartungsaufgaben  (LaunchServices, Schriften)")
         print("  4  System-Informationen anzeigen")
         print("  5  Sprachdateien bereinigen")
+        print("  6  RAM freigeben  [sudo]")
+        print("  7  Datenschutz-Caches bereinigen")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -1129,6 +1390,10 @@ def submenu_wartung():
             systeminfo_anzeigen()
         elif auswahl == "5":
             sprachdateien_bereinigen()
+        elif auswahl == "6":
+            ram_freigeben()
+        elif auswahl == "7":
+            datenschutz_bereinigen()
         elif auswahl == "0":
             break
         else:
