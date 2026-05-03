@@ -1023,6 +1023,270 @@ def user_caches_analysieren():
         print("\n  Alle Caches gehoeren installierten Apps.")
 
 
+def logs_bereinigen():
+    print("\nLog-Dateien analysieren ...\n")
+
+    log_orte = [
+        os.path.join(HOME, "Library", "Logs"),
+    ]
+
+    alle = []
+    for basis in log_orte:
+        if not os.path.exists(basis):
+            continue
+        try:
+            for name in sorted(os.listdir(basis)):
+                pfad = os.path.join(basis, name)
+                groesse = ordner_groesse(pfad)
+                mtime = os.path.getmtime(pfad)
+                alter_tage = (datetime.now().timestamp() - mtime) / 86400
+                alle.append((groesse, alter_tage, name, pfad))
+        except PermissionError:
+            pass
+
+    if not alle:
+        print("  Keine Log-Dateien gefunden.")
+        return
+
+    alle.sort(reverse=True)
+    total = sum(g for g, _, _, _ in alle)
+    print(f"  {len(alle)} Eintraege, {bytes_lesbar(total)} gesamt\n")
+    print(f"  {'Groesse':<12} {'Alter':<10} Name")
+    print(f"  {'-'*55}")
+    for groesse, tage, name, _ in alle[:20]:
+        alter_str = f"{int(tage)}d" if tage < 365 else f"{tage/365:.1f}y"
+        print(f"  {bytes_lesbar(groesse):<12} {alter_str:<10} {name}")
+    if len(alle) > 20:
+        print(f"  ... ({len(alle) - 20} weitere)")
+
+    # System-Logs ausschliessen (DiagnosticReports ist separate Funktion)
+    loeschbar = [
+        (g, t, n, p) for g, t, n, p in alle
+        if not ist_systemdatei(n) or t > 30
+    ]
+    loeschbar_total = sum(g for g, _, _, _ in loeschbar)
+    print(f"\n  Loeschbar: {len(loeschbar)} Eintraege ({bytes_lesbar(loeschbar_total)})")
+
+    antwort = input("\n  Alle Logs loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        for groesse, _, name, pfad in loeschbar:
+            try:
+                if os.path.isdir(pfad):
+                    shutil.rmtree(pfad)
+                else:
+                    os.remove(pfad)
+                print(f"  Geloescht: {name} ({bytes_lesbar(groesse)})")
+            except Exception as e:
+                print(f"  Fehler bei {name}: {e}")
+        print(f"\n  {bytes_lesbar(loeschbar_total)} freigegeben.")
+    else:
+        print("  Nichts geloescht.")
+
+
+def screenshots_aufraeumen():
+    print("\nScreenshots suchen ...\n")
+
+    suchpfade = [
+        os.path.join(HOME, "Desktop"),
+        os.path.join(HOME, "Documents"),
+        os.path.join(HOME, "Pictures"),
+        os.path.join(HOME, "Downloads"),
+    ]
+
+    SCREENSHOT_MUSTER = [
+        "Screenshot ",
+        "Bildschirmfoto ",
+        "Screen Shot ",
+        "Bildschirmaufnahme ",
+        "CleanShot ",
+    ]
+
+    gefunden = []
+    for basis in suchpfade:
+        if not os.path.exists(basis):
+            continue
+        for name in os.listdir(basis):
+            if not any(name.startswith(m) for m in SCREENSHOT_MUSTER):
+                continue
+            pfad = os.path.join(basis, name)
+            try:
+                groesse = os.path.getsize(pfad) if os.path.isfile(pfad) else ordner_groesse(pfad)
+                mtime = os.path.getmtime(pfad)
+                alter_tage = (datetime.now().timestamp() - mtime) / 86400
+                gefunden.append((groesse, alter_tage, name, pfad))
+            except (OSError, PermissionError):
+                pass
+
+    if not gefunden:
+        print("  Keine Screenshots gefunden.")
+        return
+
+    gefunden.sort(key=lambda x: x[1], reverse=True)
+    total = sum(g for g, _, _, _ in gefunden)
+    print(f"  {len(gefunden)} Screenshots, {bytes_lesbar(total)} gesamt\n")
+    print(f"  {'Groesse':<12} {'Alter':<10} Name")
+    print(f"  {'-'*60}")
+    for groesse, tage, name, _ in gefunden[:20]:
+        alter_str = f"{int(tage)}d" if tage < 365 else f"{tage/365:.1f}y"
+        print(f"  {bytes_lesbar(groesse):<12} {alter_str:<10} {name}")
+    if len(gefunden) > 20:
+        print(f"  ... ({len(gefunden) - 20} weitere)")
+
+    alte = [(g, t, n, p) for g, t, n, p in gefunden if t > 90]
+    if alte:
+        alte_total = sum(g for g, _, _, _ in alte)
+        print(f"\n  {len(alte)} Screenshots aelter als 90 Tage ({bytes_lesbar(alte_total)})")
+
+    antwort = input("\n  Alle Screenshots loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        for _, _, name, pfad in gefunden:
+            try:
+                os.remove(pfad)
+                print(f"  Geloescht: {name}")
+            except Exception as e:
+                print(f"  Fehler bei {name}: {e}")
+        print(f"\n  {bytes_lesbar(total)} freigegeben.")
+    else:
+        print("  Nichts geloescht.")
+
+
+def icloud_analyse():
+    print("\niCloud Drive analysieren ...\n")
+
+    icloud_pfad = os.path.join(HOME, "Library", "Mobile Documents", "com~apple~CloudDocs")
+    if not os.path.exists(icloud_pfad):
+        # Alternativer Pfad
+        icloud_pfad = os.path.join(HOME, "iCloud Drive (Archiv)")
+        if not os.path.exists(icloud_pfad):
+            print("  iCloud Drive nicht gefunden.")
+            print("  Tipp: iCloud Drive unter ~/Library/Mobile Documents/com~apple~CloudDocs")
+            return
+
+    print("  Berechne Groessen (kann einen Moment dauern) ...")
+    eintraege = []
+    try:
+        for name in sorted(os.listdir(icloud_pfad)):
+            if name.startswith("."):
+                continue
+            pfad = os.path.join(icloud_pfad, name)
+            groesse = ordner_groesse(pfad)
+            eintraege.append((groesse, name))
+    except PermissionError:
+        print("  Kein Zugriff auf iCloud Drive.")
+        return
+
+    eintraege.sort(reverse=True)
+    total = sum(g for g, _ in eintraege)
+
+    print(f"\n  iCloud Drive gesamt: {bytes_lesbar(total)}\n")
+    print(f"  {'Groesse':<12} {'':20} Ordner/Datei")
+    print(f"  {'-'*55}")
+    balken_max = eintraege[0][0] if eintraege else 1
+    for groesse, name in eintraege[:20]:
+        balken = int(groesse / balken_max * 15) if balken_max > 0 else 0
+        print(f"  {bytes_lesbar(groesse):<12} {'█' * balken:<15} {name}")
+    if len(eintraege) > 20:
+        print(f"  ... ({len(eintraege) - 20} weitere)")
+
+
+def system_erweiterungen():
+    print("\nSystem-Erweiterungen anzeigen ...\n")
+
+    # System Extensions (macOS 10.15+)
+    sys_ext_pfad = "/Library/SystemExtensions"
+    gefunden = False
+    if os.path.exists(sys_ext_pfad):
+        try:
+            ergebnis = subprocess.run(
+                ["systemextensionsctl", "list"],
+                capture_output=True, text=True
+            )
+            if ergebnis.returncode == 0 and ergebnis.stdout.strip():
+                print("  Installierte System-Erweiterungen:\n")
+                for zeile in ergebnis.stdout.splitlines():
+                    if zeile.strip() and not zeile.startswith("---"):
+                        print(f"  {zeile}")
+                gefunden = True
+        except FileNotFoundError:
+            pass
+
+    # Kernel Extensions (aelter, /Library/Extensions)
+    kext_pfad = "/Library/Extensions"
+    kexts = []
+    if os.path.exists(kext_pfad):
+        try:
+            kexts = [f for f in os.listdir(kext_pfad) if f.endswith(".kext")]
+        except PermissionError:
+            pass
+    if kexts:
+        print(f"\n  Kernel Extensions ({kext_pfad}):\n")
+        for kext in sorted(kexts):
+            print(f"  • {kext}")
+        gefunden = True
+
+    # User-installierte Kernel Extensions
+    user_kext = os.path.join(HOME, "Library", "Extensions")
+    if os.path.exists(user_kext):
+        try:
+            user_kexts = [f for f in os.listdir(user_kext) if f.endswith(".kext")]
+            if user_kexts:
+                print(f"\n  Benutzer Kernel Extensions (~/Library/Extensions):\n")
+                for kext in sorted(user_kexts):
+                    print(f"  • {kext}")
+                gefunden = True
+        except PermissionError:
+            pass
+
+    if not gefunden:
+        print("  Keine System-Erweiterungen oder Kernel Extensions gefunden.")
+
+    print("\n  Tipp: Unbekannte Erweiterungen koennen in")
+    print("  Systemeinstellungen > Datenschutz > Sicherheit verwaltet werden.")
+
+
+def docker_bereinigen():
+    print("\nDocker bereinigen ...\n")
+
+    docker = shutil.which("docker")
+    if not docker:
+        print("  Docker nicht installiert.")
+        return
+
+    # Pruefen ob Docker-Daemon laeuft
+    ping = subprocess.run([docker, "info"], capture_output=True, text=True)
+    if ping.returncode != 0:
+        print("  Docker ist nicht gestartet. Bitte zuerst Docker starten.")
+        return
+
+    # Vorschau: docker system df
+    df = subprocess.run([docker, "system", "df"], capture_output=True, text=True)
+    if df.returncode == 0:
+        print("  Docker Speichernutzung:\n")
+        for zeile in df.stdout.splitlines():
+            print(f"  {zeile}")
+
+    # Nicht verwendete Ressourcen anzeigen
+    prunable = subprocess.run(
+        [docker, "system", "df", "--format", "{{.Reclaimable}}"],
+        capture_output=True, text=True
+    )
+
+    print()
+    antwort = input("  Ungenutzte Docker-Ressourcen bereinigen? (j/n): ").strip().lower()
+    if antwort == "j":
+        print("\n  Fuehre docker system prune aus ...")
+        result = subprocess.run(
+            [docker, "system", "prune", "-f"],
+            capture_output=False, text=True
+        )
+        if result.returncode == 0:
+            print("  Docker bereinigt.")
+        else:
+            print("  Fehler beim Bereinigen.")
+    else:
+        print("  Nichts bereinigt.")
+
+
 def schriften_analysieren():
     print("\nSchriften analysieren ...\n")
 
@@ -1884,6 +2148,9 @@ def submenu_bereinigung():
         print("  D  Virtuelle Maschinen suchen  (.vmwarevm, .pvm, .vhd ...)")
         print("  E  Archive suchen  (.zip, .tar.gz, .rar ...)")
         print("  F  User-Caches analysieren")
+        print("  G  Log-Dateien bereinigen")
+        print("  H  Screenshots aufraeumen")
+        print("  I  Docker bereinigen")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -1917,6 +2184,12 @@ def submenu_bereinigung():
             archive_analysieren()
         elif auswahl.upper() == "F":
             user_caches_analysieren()
+        elif auswahl.upper() == "G":
+            logs_bereinigen()
+        elif auswahl.upper() == "H":
+            screenshots_aufraeumen()
+        elif auswahl.upper() == "I":
+            docker_bereinigen()
         elif auswahl == "0":
             break
         else:
@@ -1940,6 +2213,7 @@ def submenu_leistung():
         print("  B  Mail-Anhaenge analysieren")
         print("  C  Time Machine Snapshots anzeigen")
         print("  D  Schriften analysieren")
+        print("  E  iCloud Drive analysieren")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -1969,6 +2243,8 @@ def submenu_leistung():
             time_machine_snapshots()
         elif auswahl.upper() == "D":
             schriften_analysieren()
+        elif auswahl.upper() == "E":
+            icloud_analyse()
         elif auswahl == "0":
             break
         else:
@@ -1988,6 +2264,7 @@ def submenu_wartung():
         print("  7  Datenschutz-Caches bereinigen")
         print("  8  Netzwerk-Informationen anzeigen")
         print("  9  Browser-Erweiterungen anzeigen")
+        print("  A  System-Erweiterungen anzeigen")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -2009,6 +2286,8 @@ def submenu_wartung():
             netzwerk_info()
         elif auswahl == "9":
             browser_erweiterungen()
+        elif auswahl.upper() == "A":
+            system_erweiterungen()
         elif auswahl == "0":
             break
         else:
