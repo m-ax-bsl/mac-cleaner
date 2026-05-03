@@ -2126,6 +2126,128 @@ def datenschutz_bereinigen():
         print("  Nichts geloescht.")
 
 
+def virusscan_ausfuehren():
+    print("\nVirus-Scan (ClamAV) ...\n")
+
+    clamscan = shutil.which("clamscan")
+    freshclam_bin = shutil.which("freshclam")
+
+    if not clamscan:
+        print("  ClamAV ist nicht installiert.\n")
+        print("  Installation via Homebrew:")
+        print("    brew install clamav\n")
+        print("  Signaturen danach einmalig initialisieren:")
+
+        # Pfad zur freshclam.conf ermitteln
+        for basis in ["/opt/homebrew/etc/clamav", "/usr/local/etc/clamav"]:
+            sample = os.path.join(basis, "freshclam.conf.sample")
+            conf   = os.path.join(basis, "freshclam.conf")
+            if os.path.exists(sample):
+                print(f"    cp {sample} {conf}")
+                print(f"    sed -i '' 's/^Example/#Example/' {conf}")
+                break
+        print("    freshclam")
+        return
+
+    # ClamAV-Version anzeigen
+    v = subprocess.run([clamscan, "--version"], capture_output=True, text=True)
+    print(f"  {v.stdout.strip()}")
+
+    # Signatur-Datenbank prüfen
+    db_pfade = [
+        "/opt/homebrew/var/lib/clamav",
+        "/usr/local/var/lib/clamav",
+        "/var/lib/clamav",
+    ]
+    db_datum = None
+    for db_pfad in db_pfade:
+        main_cvd = os.path.join(db_pfad, "main.cvd")
+        daily_cvd = os.path.join(db_pfad, "daily.cvd")
+        daily_cld = os.path.join(db_pfad, "daily.cld")
+        for f in [daily_cld, daily_cvd, main_cvd]:
+            if os.path.exists(f):
+                mtime = os.path.getmtime(f)
+                db_datum = datetime.fromtimestamp(mtime)
+                break
+        if db_datum:
+            break
+
+    if db_datum:
+        alter = (datetime.now() - db_datum).days
+        status = "aktuell" if alter < 3 else f"VERALTET ({alter} Tage alt)"
+        print(f"  Signaturen: {db_datum.strftime('%d.%m.%Y')}  [{status}]\n")
+    else:
+        print("  Signaturen: nicht gefunden — bitte 'freshclam' ausfuehren\n")
+
+    # Scan-Ziel wählen
+    print("  Scan-Bereich:")
+    print("  1  Downloads")
+    print("  2  Desktop")
+    print("  3  Home-Verzeichnis  (kann mehrere Minuten dauern)")
+    print("  4  Eigenen Pfad eingeben")
+    print("  0  Abbrechen\n")
+
+    auswahl = input("  Auswahl: ").strip()
+    if auswahl == "0":
+        return
+    elif auswahl == "1":
+        ziel = os.path.join(HOME, "Downloads")
+    elif auswahl == "2":
+        ziel = os.path.join(HOME, "Desktop")
+    elif auswahl == "3":
+        ziel = HOME
+    elif auswahl == "4":
+        ziel = os.path.expanduser(input("  Pfad: ").strip())
+        if not os.path.exists(ziel):
+            print(f"  Pfad nicht gefunden: {ziel}")
+            return
+    else:
+        print("  Ungueltige Auswahl.")
+        return
+
+    # Signaturen aktualisieren
+    if freshclam_bin:
+        upd = input("\n  Signaturen aktualisieren? (j/n): ").strip().lower()
+        if upd == "j":
+            print("  Aktualisiere Signaturen ...\n")
+            subprocess.run([freshclam_bin], capture_output=False)
+            print()
+
+    print(f"  Scanne: {ziel}")
+    print("  (kann einige Minuten dauern — Ctrl+C zum Abbrechen)\n")
+
+    try:
+        result = subprocess.run(
+            [clamscan, "-r", "--infected", "--no-summary", ziel],
+            capture_output=True, text=True
+        )
+        # Zusammenfassung separat
+        summary = subprocess.run(
+            [clamscan, "-r", "--infected", ziel],
+            capture_output=True, text=True
+        )
+    except KeyboardInterrupt:
+        print("\n  Scan abgebrochen.")
+        return
+
+    infiziert = [z for z in result.stdout.splitlines() if "FOUND" in z]
+
+    # Zusammenfassung aus Summary-Lauf
+    for zeile in summary.stdout.splitlines():
+        key = zeile.split(":")[0].strip() if ":" in zeile else ""
+        if key in ("Scanned files", "Infected files", "Time", "Data scanned",
+                   "Scanned directories"):
+            print(f"  {zeile.strip()}")
+
+    if infiziert:
+        print(f"\n  WARNUNG: {len(infiziert)} Bedrohung(en) gefunden!\n")
+        for f in infiziert:
+            print(f"  {f}")
+        print("\n  Tipp: Infizierte Dateien manuell pruefen und loeschen.")
+    else:
+        print("\n  Keine Bedrohungen gefunden.")
+
+
 # ── MENUES ────────────────────────────────────────────────────────────────────
 
 def submenu_bereinigung():
@@ -2265,6 +2387,7 @@ def submenu_wartung():
         print("  8  Netzwerk-Informationen anzeigen")
         print("  9  Browser-Erweiterungen anzeigen")
         print("  A  System-Erweiterungen anzeigen")
+        print("  B  Virus-Scan  (ClamAV)")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -2288,6 +2411,8 @@ def submenu_wartung():
             browser_erweiterungen()
         elif auswahl.upper() == "A":
             system_erweiterungen()
+        elif auswahl.upper() == "B":
+            virusscan_ausfuehren()
         elif auswahl == "0":
             break
         else:

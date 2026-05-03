@@ -77,6 +77,7 @@ mac-cleaner
 | Netzwerk-Informationen | IP, WiFi SSID, DNS-Server, Gateway, TCP-Verbindungen | |
 | Browser-Erweiterungen | Listet installierte Erweiterungen in Chrome, Brave, Edge, Safari | |
 | System-Erweiterungen | Zeigt Kernel Extensions und System Extensions | |
+| Virus-Scan | ClamAV-Scan auf Downloads, Desktop oder Home — zeigt Signatur-Alter und Befunde | |
 
 ## Sicherheit
 
@@ -89,3 +90,4 @@ mac-cleaner
 
 - macOS
 - Python 3
+- ClamAV (optional, für Virus-Scan): `brew install clamav`
