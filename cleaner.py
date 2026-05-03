@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import glob
 import plistlib
+import hashlib
 from datetime import datetime
 
 HOME = os.path.expanduser("~")
@@ -766,6 +767,199 @@ def mail_analysieren():
     print("\n  Tipp: Geloeschte Mails bereinigen in")
     print("  Mail > Postfach > Geloeschte Objekte entfernen.")
 
+def systeminfo_anzeigen():
+    print("\nSystem-Informationen ...\n")
+
+    def sysctl(key):
+        try:
+            return subprocess.run(["sysctl", "-n", key],
+                capture_output=True, text=True).stdout.strip()
+        except Exception:
+            return "?"
+
+    # macOS
+    vers = subprocess.run(["sw_vers"], capture_output=True, text=True).stdout.strip()
+    for zeile in vers.splitlines():
+        print(f"  {zeile}")
+
+    # CPU & RAM
+    cpu = sysctl("machdep.cpu.brand_string")
+    ram_bytes = int(sysctl("hw.memsize") or 0)
+    print(f"\n  CPU:    {cpu}")
+    print(f"  RAM:    {bytes_lesbar(ram_bytes)}")
+
+    # RAM-Nutzung via vm_stat
+    try:
+        vm = subprocess.run(["vm_stat"], capture_output=True, text=True).stdout
+        seitengroesse = 16384
+        def vmwert(schluessel):
+            for zeile in vm.splitlines():
+                if schluessel in zeile:
+                    return int(''.join(filter(str.isdigit, zeile))) * seitengroesse
+            return 0
+        belegt = vmwert("Pages active") + vmwert("Pages wired down")
+        print(f"  RAM genutzt: {bytes_lesbar(belegt)} / {bytes_lesbar(ram_bytes)}")
+    except Exception:
+        pass
+
+    # Uptime
+    boot = sysctl("kern.boottime")
+    try:
+        sek = int(boot.split("sec = ")[1].split(",")[0])
+        uptime_h = (datetime.now().timestamp() - sek) / 3600
+        if uptime_h < 24:
+            print(f"  Uptime: {uptime_h:.1f} Stunden")
+        else:
+            print(f"  Uptime: {uptime_h/24:.1f} Tage")
+    except Exception:
+        pass
+
+    # Festplatte
+    disk = shutil.disk_usage("/")
+    print(f"\n  Festplatte: {bytes_lesbar(disk.used)} belegt / {bytes_lesbar(disk.total)} total ({disk.used/disk.total*100:.0f}%)")
+    print(f"  Frei:       {bytes_lesbar(disk.free)}")
+
+    # Akku (nur bei MacBooks)
+    try:
+        akku = subprocess.run(["pmset", "-g", "batt"],
+            capture_output=True, text=True).stdout
+        for zeile in akku.splitlines():
+            if "%" in zeile:
+                print(f"\n  Akku: {zeile.strip()}")
+                break
+    except Exception:
+        pass
+
+def duplikate_suchen():
+    print("\nDuplikate suchen ...\n")
+    print("  Analysiere Dateien (kann einen Moment dauern) ...")
+
+    groessen = {}
+    for wurzel, ordner, dateien in os.walk(HOME):
+        ordner[:] = [o for o in ordner if not o.startswith(".")
+                     and o not in ["Library", "Applications"]]
+        for datei in dateien:
+            pfad = os.path.join(wurzel, datei)
+            try:
+                if os.path.islink(pfad):
+                    continue
+                groesse = os.path.getsize(pfad)
+                if groesse < 1024:
+                    continue
+                groessen.setdefault(groesse, []).append(pfad)
+            except (OSError, PermissionError):
+                pass
+
+    # Nur Gruppen mit mehreren Dateien hashen
+    dupgruppen = []
+    for groesse, pfade in groessen.items():
+        if len(pfade) < 2:
+            continue
+        hashes = {}
+        for pfad in pfade:
+            try:
+                h = hashlib.md5()
+                with open(pfad, "rb") as f:
+                    while chunk := f.read(65536):
+                        h.update(chunk)
+                hashes.setdefault(h.hexdigest(), []).append(pfad)
+            except (OSError, PermissionError):
+                pass
+        for duplist in hashes.values():
+            if len(duplist) > 1:
+                dupgruppen.append((groesse, duplist))
+
+    if not dupgruppen:
+        print("  Keine Duplikate gefunden.")
+        return
+
+    dupgruppen.sort(reverse=True)
+    total_verschwendet = sum(g * (len(d) - 1) for g, d in dupgruppen)
+    print(f"\n  {len(dupgruppen)} Duplikat-Gruppen gefunden")
+    print(f"  Einsparpotenzial: {bytes_lesbar(total_verschwendet)}\n")
+    print(f"  {'Groesse':<12} Dateien")
+    print(f"  {'-'*60}")
+    for groesse, duplist in dupgruppen[:15]:
+        print(f"  {bytes_lesbar(groesse):<12} ({len(duplist)}x)")
+        for pfad in duplist:
+            print(f"               {pfad.replace(HOME, '~')}")
+    if len(dupgruppen) > 15:
+        print(f"\n  ... ({len(dupgruppen) - 15} weitere Gruppen nicht angezeigt)")
+    print("\n  Tipp: Duplikate manuell pruefen und loeschen —")
+    print("  das Tool loescht keine Duplikate automatisch.")
+
+def sprachdateien_bereinigen():
+    print("\nSprachdateien in Apps analysieren ...\n")
+
+    # Systemsprache ermitteln
+    try:
+        lang_out = subprocess.run(
+            ["defaults", "read", "-g", "AppleLanguages"],
+            capture_output=True, text=True
+        ).stdout
+        sys_lang = None
+        for z in lang_out.splitlines():
+            z = z.strip().strip('",').split("-")[0]
+            if len(z) == 2 and z.isalpha():
+                sys_lang = z
+                break
+        sys_lang = sys_lang or "de"
+    except Exception:
+        sys_lang = "de"
+
+    behalten = {sys_lang, "en", "Base"}
+    print(f"  Behalte: {', '.join(sorted(behalten))}\n")
+
+    loeschbar = []
+    apps = []
+    for ordner in ["/Applications", os.path.join(HOME, "Applications")]:
+        if os.path.exists(ordner):
+            apps += [os.path.join(ordner, a)
+                     for a in os.listdir(ordner) if a.endswith(".app")]
+
+    for app in apps:
+        res_pfad = os.path.join(app, "Contents", "Resources")
+        if not os.path.exists(res_pfad):
+            continue
+        for eintrag in os.listdir(res_pfad):
+            if not eintrag.endswith(".lproj"):
+                continue
+            lang = eintrag.replace(".lproj", "").split("-")[0]
+            if lang in behalten:
+                continue
+            pfad = os.path.join(res_pfad, eintrag)
+            groesse = ordner_groesse(pfad)
+            loeschbar.append((groesse, pfad, os.path.basename(app)))
+
+    if not loeschbar:
+        print("  Keine entfernbaren Sprachdateien gefunden.")
+        return
+
+    loeschbar.sort(reverse=True)
+    total = sum(g for g, _, _ in loeschbar)
+    print(f"  {len(loeschbar)} Sprachdateien in {len({a for _, _, a in loeschbar})} Apps")
+    print(f"  Einsparpotenzial: {bytes_lesbar(total)}\n")
+    print(f"  {'Groesse':<12} {'App':<30} Sprache")
+    print(f"  {'-'*60}")
+    for groesse, pfad, app in loeschbar[:20]:
+        lang = os.path.basename(pfad).replace(".lproj", "")
+        print(f"  {bytes_lesbar(groesse):<12} {app:<30} {lang}")
+    if len(loeschbar) > 20:
+        print(f"  ... ({len(loeschbar) - 20} weitere)")
+
+    antwort = input(f"\n  Alle nicht benoetigen Sprachdateien loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        geloescht = 0
+        for groesse, pfad, _ in loeschbar:
+            try:
+                shutil.rmtree(pfad)
+                geloescht += groesse
+            except Exception as e:
+                print(f"  Fehler: {e}")
+        print(f"  {bytes_lesbar(geloescht)} freigegeben.")
+    else:
+        print("  Nichts geloescht.")
+
 # ── WARTUNG ───────────────────────────────────────────────────────────────────
 
 def _sudo_ausfuehren(args, beschreibung):
@@ -863,6 +1057,7 @@ def submenu_leistung():
         print("  6  App deinstallieren")
         print("  7  Alte Dateien suchen  (> 1 Jahr nicht veraendert)")
         print("  8  Mail-Ordner analysieren")
+        print("  9  Duplikate suchen")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -882,6 +1077,8 @@ def submenu_leistung():
             alte_dateien_suchen()
         elif auswahl == "8":
             mail_analysieren()
+        elif auswahl == "9":
+            duplikate_suchen()
         elif auswahl == "0":
             break
         else:
@@ -895,6 +1092,8 @@ def submenu_wartung():
         print("  1  DNS-Cache leeren")
         print("  2  Spotlight neu indizieren")
         print("  3  macOS-Wartungsskripte ausfuehren")
+        print("  4  System-Informationen anzeigen")
+        print("  5  Sprachdateien bereinigen")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -904,6 +1103,10 @@ def submenu_wartung():
             spotlight_neu_indizieren()
         elif auswahl == "3":
             wartungsskripte_ausfuehren()
+        elif auswahl == "4":
+            systeminfo_anzeigen()
+        elif auswahl == "5":
+            sprachdateien_bereinigen()
         elif auswahl == "0":
             break
         else:
