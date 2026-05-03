@@ -63,6 +63,9 @@ mac-cleaner
 | Time Machine Snapshots | Listet lokale Time Machine Snapshots, optional löschen |
 | Schriften analysieren | Zeigt installierte Fonts nach Quelle, markiert Duplikate |
 | iCloud Drive analysieren | Zeigt Belegung von iCloud Drive nach Ordner mit Balkendiagramm |
+| Laufende Prozesse | Top CPU/RAM-Verbraucher, einzelne Prozesse beenden |
+| Energie-Analyse | Akkustatus, Schlaf-Einstellungen, was den Schlafmodus blockiert |
+| SSD / Festplatten-Status | TRIM-Aktivierung, Volume-Übersicht, SMART-Status |
 
 ### Wartung
 | Funktion | Beschreibung | sudo |

@@ -2317,6 +2317,209 @@ def submenu_bereinigung():
         else:
             print("\n  Ungueltige Auswahl.")
 
+def prozesse_analysieren():
+    print("\nLaufende Prozesse analysieren ...\n")
+
+    # Top-Prozesse nach CPU
+    try:
+        cpu_out = subprocess.run(
+            ["ps", "-eo", "pid,%cpu,%mem,rss,comm", "-r"],
+            capture_output=True, text=True
+        ).stdout.splitlines()
+    except Exception:
+        print("  Fehler beim Abfragen der Prozesse.")
+        return
+
+    prozesse = []
+    for zeile in cpu_out[1:]:
+        teile = zeile.split(None, 4)
+        if len(teile) < 5:
+            continue
+        try:
+            pid  = int(teile[0])
+            cpu  = float(teile[1])
+            mem  = float(teile[2])
+            rss  = int(teile[3]) * 1024
+            name = os.path.basename(teile[4].strip())
+            prozesse.append((cpu, mem, rss, pid, name))
+        except ValueError:
+            pass
+
+    if not prozesse:
+        print("  Keine Prozesse gefunden.")
+        return
+
+    print(f"  {'PID':<7} {'CPU %':<8} {'RAM %':<8} {'RAM':<10} Prozess")
+    print(f"  {'-'*58}")
+    for cpu, mem, rss, pid, name in prozesse[:20]:
+        print(f"  {pid:<7} {cpu:<8.1f} {mem:<8.1f} {bytes_lesbar(rss):<10} {name}")
+
+    total_ram = sum(r for _, _, r, _, _ in prozesse)
+    print(f"\n  {len(prozesse)} Prozesse, {bytes_lesbar(total_ram)} RAM gesamt")
+
+    # Beenden anbieten
+    antwort = input("\n  PID eines Prozesses zum Beenden eingeben (oder Enter): ").strip()
+    if antwort:
+        try:
+            kill_pid = int(antwort)
+            treffer = [n for c, m, r, p, n in prozesse if p == kill_pid]
+            name_str = treffer[0] if treffer else str(kill_pid)
+            bestaetigung = input(f"  '{name_str}' (PID {kill_pid}) beenden? (j/n): ").strip().lower()
+            if bestaetigung == "j":
+                result = subprocess.run(["kill", str(kill_pid)], capture_output=True, text=True)
+                if result.returncode == 0:
+                    print(f"  Prozess {kill_pid} beendet.")
+                else:
+                    print(f"  Fehler: {result.stderr.strip()}")
+        except ValueError:
+            print("  Ungueltige PID.")
+
+
+def energie_analyse():
+    print("\nEnergie-Analyse ...\n")
+
+    # Akku-Status
+    try:
+        batt = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True).stdout
+        print("  Akku:\n")
+        for zeile in batt.strip().splitlines():
+            print(f"  {zeile}")
+    except Exception:
+        pass
+
+    # Energie-Einstellungen
+    try:
+        settings = subprocess.run(["pmset", "-g"], capture_output=True, text=True).stdout
+        print("\n  Strom-Einstellungen:\n")
+        wichtig = {"sleep", "displaysleep", "disksleep", "autopoweroff",
+                   "powernap", "tcpkeepalive", "proximitywake"}
+        for zeile in settings.strip().splitlines():
+            schluessel = zeile.strip().split()[0] if zeile.strip() else ""
+            if schluessel.lower() in wichtig:
+                print(f"  {zeile.strip()}")
+    except Exception:
+        pass
+
+    # Was verhindert Schlafmodus (Power Assertions) — gruppiert nach Prozess
+    try:
+        import re
+        assertions = subprocess.run(
+            ["pmset", "-g", "assertions"], capture_output=True, text=True
+        ).stdout
+        proz_sperren = {}
+        for zeile in assertions.splitlines():
+            if "PreventUserIdleSystemSleep" in zeile or "PreventSystemSleep" in zeile:
+                m = re.search(r"pid\s+(\d+)\(([^)]+)\)", zeile)
+                if m:
+                    proz_sperren[m.group(2)] = int(m.group(1))
+        if proz_sperren:
+            print("\n  Schlafmodus wird verhindert durch:\n")
+            for name, pid in sorted(proz_sperren.items()):
+                print(f"  • {name}  (PID {pid})")
+        else:
+            print("\n  Keine aktiven Sleep-Sperren gefunden.")
+    except Exception:
+        pass
+
+    # Systemlaufzeit und Temperaturen (falls verfuegbar)
+    try:
+        syslog = subprocess.run(
+            ["sysctl", "-n", "kern.boottime"], capture_output=True, text=True
+        ).stdout.strip()
+        sek = int(syslog.split("sec = ")[1].split(",")[0])
+        uptime_h = (datetime.now().timestamp() - sek) / 3600
+        print(f"\n  Uptime: {uptime_h:.1f} h ({uptime_h/24:.1f} Tage)")
+    except Exception:
+        pass
+
+
+def ssd_status():
+    print("\nSSD / Festplatten-Status ...\n")
+
+    # TRIM + Modell vom Haupt-Laufwerk
+    try:
+        trim_out = subprocess.run(
+            ["system_profiler", "SPNVMeDataType"],
+            capture_output=True, text=True, timeout=15
+        ).stdout
+        # Nur ersten Block auswerten (physisches Laufwerk, nicht Partitionen)
+        modell = trim = kapazitaet = ""
+        in_first_device = False
+        for zeile in trim_out.splitlines():
+            stripped = zeile.strip()
+            if not stripped:
+                if in_first_device and trim:
+                    break
+                continue
+            if not zeile.startswith("    ") and stripped.endswith(":") and not in_first_device:
+                in_first_device = True
+                continue
+            if in_first_device and ":" in stripped:
+                key, _, val = stripped.partition(":")
+                key = key.strip(); val = val.strip()
+                if key in ("Model", "Device Model") and not modell:
+                    modell = val
+                if key == "TRIM Support" and not trim:
+                    trim = "aktiviert" if val.lower() == "yes" else "DEAKTIVIERT"
+                if key == "Capacity" and not kapazitaet:
+                    kapazitaet = val.split("(")[0].strip()
+        if modell:
+            print(f"  Laufwerk: {modell}")
+        if kapazitaet:
+            print(f"  Kapazitaet: {kapazitaet}")
+        if trim:
+            print(f"  TRIM:     {trim}")
+        elif not modell:
+            # Fallback SATA
+            sata = subprocess.run(
+                ["system_profiler", "SPSerialATADataType"],
+                capture_output=True, text=True, timeout=15
+            ).stdout
+            for zeile in sata.splitlines():
+                if "TRIM" in zeile:
+                    print(f"  {zeile.strip()}")
+    except Exception as e:
+        print(f"  TRIM-Info nicht verfuegbar: {e}")
+
+    # Einhängepunkte (nur Haupt-Volumes, kein system-Kleinkram)
+    print()
+    try:
+        df = subprocess.run(["df", "-g"], capture_output=True, text=True).stdout
+        zeig = ["/", "/System/Volumes/Data"]
+        extras = []
+        for zeile in df.splitlines()[1:]:
+            teile = zeile.split()
+            if len(teile) < 6:
+                continue
+            mountpoint = teile[-1]
+            if not teile[0].startswith("/dev/"):
+                continue
+            # Nur sinnvolle Einhängepunkte
+            if mountpoint in zeig or mountpoint.startswith("/Volumes/"):
+                extras.append(teile)
+        if extras:
+            print(f"  {'Volume':<20} {'Gesamt':>8} {'Belegt':>8} {'Frei':>8}  Pfad")
+            print(f"  {'-'*58}")
+            for t in extras:
+                name = t[0].replace("/dev/", "")
+                print(f"  {name:<20} {t[1]:>6} GB {t[2]:>6} GB {t[3]:>6} GB  {t[-1]}")
+    except Exception:
+        pass
+
+    # SMART-Status
+    print()
+    try:
+        smart = subprocess.run(
+            ["diskutil", "info", "/dev/disk0"],
+            capture_output=True, text=True
+        ).stdout
+        for zeile in smart.splitlines():
+            if "SMART" in zeile:
+                print(f"  {zeile.strip()}")
+    except Exception:
+        pass
+
+
 def submenu_leistung():
     while True:
         print("\n" + "-"*50)
@@ -2336,6 +2539,9 @@ def submenu_leistung():
         print("  C  Time Machine Snapshots anzeigen")
         print("  D  Schriften analysieren")
         print("  E  iCloud Drive analysieren")
+        print("  F  Laufende Prozesse analysieren")
+        print("  G  Energie-Analyse  (Akku, Schlafmodus)")
+        print("  H  SSD / Festplatten-Status")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -2367,6 +2573,12 @@ def submenu_leistung():
             schriften_analysieren()
         elif auswahl.upper() == "E":
             icloud_analyse()
+        elif auswahl.upper() == "F":
+            prozesse_analysieren()
+        elif auswahl.upper() == "G":
+            energie_analyse()
+        elif auswahl.upper() == "H":
+            ssd_status()
         elif auswahl == "0":
             break
         else:
