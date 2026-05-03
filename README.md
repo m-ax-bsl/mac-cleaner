@@ -47,6 +47,7 @@ mac-cleaner
 | App deinstallieren | Findet alle Dateien einer App in Library-Ordnern und löscht sie |
 | Alte Dateien suchen | Listet Dateien, die seit über einem Jahr nicht verändert wurden |
 | Mail-Ordner analysieren | Zeigt Grösse des Mail-Stores aufgeteilt nach Accounts |
+| Duplikate suchen | Findet identische Dateien via Grösse + MD5-Hash |
 
 ### Wartung
 | Funktion | Beschreibung | sudo |
@@ -54,6 +55,8 @@ mac-cleaner
 | DNS-Cache leeren | `dscacheutil` + `mDNSResponder` Neustart | ✓ |
 | Spotlight neu indizieren | Löscht und rebuilt den Spotlight-Index | ✓ |
 | macOS-Wartungsskripte | `periodic daily weekly monthly` (macOS 14 und älter) | ✓ |
+| System-Informationen | CPU, RAM, Akku, Uptime, Festplattennutzung | |
+| Sprachdateien bereinigen | Entfernt ungenutzte `.lproj`-Ordner aus App-Bundles | |
 
 ## Sicherheit
 
