@@ -33,6 +33,7 @@ mac-cleaner
 | Homebrew-Cache bereinigen | Zeigt und löscht alte Homebrew-Pakete (`brew cleanup`) |
 | Browser-Caches bereinigen | Safari, Chrome, Firefox, Arc, Brave, Edge u.a. |
 | iOS-Backups anzeigen | Zeigt Grösse und Datum aller iPhone/iPad-Backups |
+| Gespeicherte App-Zustände | Löscht Fenster-Snapshots aus `~/Library/Saved Application State` |
 
 ### Leistung
 | Funktion | Beschreibung |
@@ -41,6 +42,8 @@ mac-cleaner
 | Defekte LaunchAgents entfernen | Findet und löscht LaunchAgents mit fehlenden Programmen |
 | Entwickler-Cache bereinigen | Löscht Xcode DerivedData, CoreSimulator Caches, Swift PM Cache |
 | Downloads analysieren | Zeigt Dateien nach Grösse und Alter, markiert Einträge über 90 Tage |
+| Festplattennutzung anzeigen | Übersicht der grössten Ordner im Home-Verzeichnis mit Balkendiagramm |
+| App deinstallieren | Findet alle Dateien einer App in Library-Ordnern und löscht sie |
 
 ### Wartung
 | Funktion | Beschreibung | sudo |
