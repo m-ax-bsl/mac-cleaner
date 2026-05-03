@@ -30,11 +30,15 @@ mac-cleaner
 | App-Reste suchen | Findet Caches, Logs und Preferences von deinstallierten Apps |
 | Grosse Dateien suchen | Listet alle Dateien über 100 MB sortiert nach Grösse |
 | Papierkorb leeren | Zeigt Grösse und leert den Papierkorb nach Bestätigung |
+| Homebrew-Cache bereinigen | Zeigt und löscht alte Homebrew-Pakete (`brew cleanup`) |
+| Browser-Caches bereinigen | Safari, Chrome, Firefox, Arc, Brave, Edge u.a. |
+| iOS-Backups anzeigen | Zeigt Grösse und Datum aller iPhone/iPad-Backups |
 
 ### Leistung
 | Funktion | Beschreibung |
 |---|---|
 | Login-Objekte anzeigen | Listet Login-Items und LaunchAgents |
+| Defekte LaunchAgents entfernen | Findet und löscht LaunchAgents mit fehlenden Programmen |
 | Entwickler-Cache bereinigen | Löscht Xcode DerivedData, CoreSimulator Caches, Swift PM Cache |
 | Downloads analysieren | Zeigt Dateien nach Grösse und Alter, markiert Einträge über 90 Tage |
 
