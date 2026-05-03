@@ -493,6 +493,156 @@ def downloads_analysieren():
         print(f"\n  {len(alte)} Eintraege aelter als 90 Tage ({bytes_lesbar(alte_total)})")
         print("  Tipp: Oeffne den Downloads-Ordner und loesche manuell was du nicht mehr brauchst.")
 
+def gespeicherte_zustaende_bereinigen():
+    print("\nGespeicherte App-Zustaende bereinigen ...\n")
+    pfad = os.path.join(HOME, "Library", "Saved Application State")
+    if not os.path.exists(pfad):
+        print("  Keine gespeicherten Zustaende gefunden.")
+        return
+
+    eintraege = [d for d in os.listdir(pfad) if os.path.isdir(os.path.join(pfad, d))]
+    if not eintraege:
+        print("  Keine gespeicherten Zustaende gefunden.")
+        return
+
+    total = ordner_groesse(pfad)
+    print(f"  {len(eintraege)} gespeicherte App-Zustaende ({bytes_lesbar(total)})\n")
+    for name in sorted(eintraege)[:15]:
+        groesse = ordner_groesse(os.path.join(pfad, name))
+        print(f"  {bytes_lesbar(groesse):<12} {name}")
+    if len(eintraege) > 15:
+        print(f"  ... ({len(eintraege) - 15} weitere)")
+
+    print("\n  Diese Dateien speichern offene Fenster beim Beenden.")
+    print("  macOS erstellt sie automatisch neu — sicher zu loeschen.")
+    antwort = input("\n  Alle gespeicherten Zustaende loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        try:
+            shutil.rmtree(pfad)
+            os.makedirs(pfad)
+            print(f"  Geloescht — {bytes_lesbar(total)} freigegeben.")
+        except Exception as e:
+            print(f"  Fehler: {e}")
+    else:
+        print("  Nichts geloescht.")
+
+def festplattennutzung_anzeigen():
+    print("\nFestplattennutzung analysieren ...\n")
+
+    # Gesamte Disk-Nutzung
+    disk = shutil.disk_usage("/")
+    print(f"  Festplatte gesamt: {bytes_lesbar(disk.total)}")
+    print(f"  Belegt:            {bytes_lesbar(disk.used)} ({disk.used/disk.total*100:.0f}%)")
+    print(f"  Frei:              {bytes_lesbar(disk.free)}\n")
+
+    # Top-Ordner im Home-Verzeichnis
+    print(f"  Groesste Ordner in ~:\n")
+    ordner = []
+    skip = {"Library"}
+    try:
+        for name in os.listdir(HOME):
+            if name.startswith(".") or name in skip:
+                continue
+            pfad = os.path.join(HOME, name)
+            groesse = ordner_groesse(pfad)
+            ordner.append((groesse, name))
+    except PermissionError:
+        pass
+
+    # Library separat mit du fuer korrekte Groesse
+    lib_pfad = os.path.join(HOME, "Library")
+    try:
+        ergebnis = subprocess.run(
+            ["du", "-sk", lib_pfad], capture_output=True, text=True
+        )
+        if ergebnis.returncode == 0:
+            kb = int(ergebnis.stdout.split()[0])
+            ordner.append((kb * 1024, "Library"))
+    except Exception:
+        pass
+
+    ordner.sort(reverse=True)
+    balken_max = ordner[0][0] if ordner else 1
+    print(f"  {'Groesse':<12} {'':30} Ordner")
+    print(f"  {'-'*60}")
+    for groesse, name in ordner[:15]:
+        balken = int(groesse / balken_max * 20)
+        print(f"  {bytes_lesbar(groesse):<12} {'█' * balken:<20} {name}")
+
+def app_deinstallieren():
+    print("\nApp deinstallieren ...\n")
+    app_name = input("  App-Name eingeben (z.B. Spotify): ").strip()
+    if not app_name:
+        return
+
+    app_lower = app_name.lower()
+    print(f"\n  Suche Dateien fuer '{app_name}' ...\n")
+
+    suchpfade = [
+        f"/Applications/{app_name}.app",
+        os.path.join(HOME, f"Applications/{app_name}.app"),
+        os.path.join(HOME, f"Library/Application Support/{app_name}"),
+        os.path.join(HOME, f"Library/Caches/{app_name}"),
+        os.path.join(HOME, f"Library/Logs/{app_name}"),
+        os.path.join(HOME, f"Library/Preferences/{app_name}.plist"),
+    ]
+
+    # Wildcard-Suche in typischen Ordnern
+    wildcard_orte = [
+        os.path.join(HOME, "Library/Application Support"),
+        os.path.join(HOME, "Library/Caches"),
+        os.path.join(HOME, "Library/Logs"),
+        os.path.join(HOME, "Library/Preferences"),
+        os.path.join(HOME, "Library/Containers"),
+        os.path.join(HOME, "Library/Group Containers"),
+        os.path.join(HOME, "Library/LaunchAgents"),
+    ]
+    for ort in wildcard_orte:
+        if not os.path.exists(ort):
+            continue
+        try:
+            for eintrag in os.listdir(ort):
+                if app_lower in eintrag.lower():
+                    suchpfade.append(os.path.join(ort, eintrag))
+        except PermissionError:
+            pass
+
+    gefunden = []
+    gesehen = set()
+    for pfad in suchpfade:
+        if pfad in gesehen or not os.path.exists(pfad):
+            continue
+        gesehen.add(pfad)
+        groesse = ordner_groesse(pfad)
+        gefunden.append((groesse, pfad))
+
+    if not gefunden:
+        print(f"  Keine Dateien fuer '{app_name}' gefunden.")
+        return
+
+    gefunden.sort(reverse=True)
+    total = sum(g for g, _ in gefunden)
+    print(f"  {'Groesse':<12} Pfad")
+    print(f"  {'-'*60}")
+    for groesse, pfad in gefunden:
+        print(f"  {bytes_lesbar(groesse):<12} {pfad.replace(HOME, '~')}")
+    print(f"\n  Total: {bytes_lesbar(total)} in {len(gefunden)} Eintraegen")
+
+    antwort = input("\n  Alle gefundenen Dateien loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        for _, pfad in gefunden:
+            try:
+                if os.path.isdir(pfad):
+                    shutil.rmtree(pfad)
+                else:
+                    os.remove(pfad)
+                print(f"  Geloescht: {pfad.replace(HOME, '~')}")
+            except Exception as e:
+                print(f"  Fehler: {e}")
+        print(f"\n  {bytes_lesbar(total)} freigegeben.")
+    else:
+        print("  Nichts geloescht.")
+
 # ── WARTUNG ───────────────────────────────────────────────────────────────────
 
 def _sudo_ausfuehren(args, beschreibung):
@@ -551,6 +701,7 @@ def submenu_bereinigung():
         print("  4  Homebrew-Cache bereinigen")
         print("  5  Browser-Caches bereinigen")
         print("  6  iOS-Backups anzeigen")
+        print("  7  Gespeicherte App-Zustaende bereinigen")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -566,6 +717,8 @@ def submenu_bereinigung():
             browser_cache_bereinigen()
         elif auswahl == "6":
             ios_backups_anzeigen()
+        elif auswahl == "7":
+            gespeicherte_zustaende_bereinigen()
         elif auswahl == "0":
             break
         else:
@@ -580,6 +733,8 @@ def submenu_leistung():
         print("  2  Defekte LaunchAgents entfernen")
         print("  3  Entwickler-Cache bereinigen  (Xcode, Simulatoren)")
         print("  4  Downloads-Ordner analysieren")
+        print("  5  Festplattennutzung anzeigen")
+        print("  6  App deinstallieren")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -591,6 +746,10 @@ def submenu_leistung():
             entwickler_cache_bereinigen()
         elif auswahl == "4":
             downloads_analysieren()
+        elif auswahl == "5":
+            festplattennutzung_anzeigen()
+        elif auswahl == "6":
+            app_deinstallieren()
         elif auswahl == "0":
             break
         else:
@@ -623,9 +782,9 @@ def hauptmenu():
     print("  mac-cleaner")
     print("="*50)
     print("  1  Bereinigung")
-    print("     App-Reste, Dateien, Papierkorb, Brew, Browser, iOS-Backups")
+    print("     App-Reste, Dateien, Papierkorb, Brew, Browser, Zustaende")
     print("  2  Leistung")
-    print("     Login-Objekte, LaunchAgents, Entwickler-Cache, Downloads")
+    print("     Disk-Nutzung, App-Deinstallation, Downloads, LaunchAgents")
     print("  3  Wartung                         [sudo]")
     print("     DNS, Spotlight, macOS-Skripte")
     print("  0  Beenden")
