@@ -353,15 +353,15 @@ def _sudo_ausfuehren(args, beschreibung):
 def dns_cache_leeren():
     print("\nDNS-Cache leeren ...\n")
     print("  Benoetigt sudo-Rechte.\n")
-    _sudo_ausfuehren(["sudo", "dscacheutil", "-flushcache"], "dscacheutil")
-    _sudo_ausfuehren(["sudo", "killall", "-HUP", "mDNSResponder"], "mDNSResponder")
+    _sudo_ausfuehren(["sudo", "/usr/bin/dscacheutil", "-flushcache"], "dscacheutil")
+    _sudo_ausfuehren(["sudo", "/usr/bin/killall", "-HUP", "mDNSResponder"], "mDNSResponder")
     print("  DNS-Cache wurde geleert.")
 
 def spotlight_neu_indizieren():
     print("\nSpotlight neu indizieren ...\n")
     print("  Benoetigt sudo-Rechte. Die Neuindizierung laeuft im Hintergrund")
     print("  und kann einige Minuten dauern.\n")
-    _sudo_ausfuehren(["sudo", "mdutil", "-E", "/"], "Spotlight-Index geloescht")
+    _sudo_ausfuehren(["sudo", "/usr/bin/mdutil", "-E", "/"], "Spotlight-Index geloescht")
     print("  Spotlight erstellt den Index automatisch neu.")
 
 def wartungsskripte_ausfuehren():
