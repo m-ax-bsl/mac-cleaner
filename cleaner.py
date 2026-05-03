@@ -371,7 +371,7 @@ def wartungsskripte_ausfuehren():
     print("  Benoetigt sudo-Rechte. Kann einige Minuten dauern.\n")
     antwort = input("  Alle drei Wartungsskripte jetzt ausfuehren? (j/n): ").strip().lower()
     if antwort == "j":
-        _sudo_ausfuehren(["sudo", "periodic", "daily", "weekly", "monthly"],
+        _sudo_ausfuehren(["sudo", "/usr/sbin/periodic", "daily", "weekly", "monthly"],
                          "Wartungsskripte")
     else:
         print("  Abgebrochen.")
