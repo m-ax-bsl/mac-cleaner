@@ -990,19 +990,41 @@ def spotlight_neu_indizieren():
     print("  Spotlight erstellt den Index automatisch neu.")
 
 def wartungsskripte_ausfuehren():
-    print("\nmacOS-Wartungsskripte ausfuehren ...\n")
-    if not os.path.exists("/usr/sbin/periodic"):
-        print("  Nicht verfuegbar: 'periodic' wurde in dieser macOS-Version entfernt.")
-        print("  Die Wartungsaufgaben werden automatisch im Hintergrund von launchd verwaltet.")
-        return
-    print("  macOS hat eingebaute taegliche, woechentliche und monatliche")
-    print("  Wartungsskripte (Log-Rotation, temp. Dateien, etc.).")
-    print("  Benoetigt sudo-Rechte. Kann einige Minuten dauern.\n")
-    antwort = input("  Alle drei Wartungsskripte jetzt ausfuehren? (j/n): ").strip().lower()
-    if antwort == "j":
-        _sudo_ausfuehren(["sudo", "/usr/sbin/periodic", "daily", "weekly", "monthly"],
-                         "Wartungsskripte")
-    else:
+    print("\nmacOS-Wartungsaufgaben ...\n")
+
+    LSREGISTER = (
+        "/System/Library/Frameworks/CoreServices.framework"
+        "/Frameworks/LaunchServices.framework/Support/lsregister"
+    )
+    ATSUTIL = "/usr/bin/atsutil"
+
+    print("  1  LaunchServices-Datenbank neu aufbauen")
+    print("     Behebt Probleme mit 'Oeffnen mit'-Menue und Datei-Zuordnungen")
+    print("  2  Schriften-Cache bereinigen")
+    print("     Behebt Darstellungsfehler bei Schriften  [sudo]")
+    print("  3  Beide ausfuehren")
+    print("  0  Abbrechen\n")
+    auswahl = input("  Auswahl: ").strip()
+
+    if auswahl in ("1", "3"):
+        print("\n  Baue LaunchServices-Datenbank neu auf ...")
+        _sudo_ausfuehren(
+            ["sudo", LSREGISTER, "-kill", "-r",
+             "-domain", "local", "-domain", "system", "-domain", "user"],
+            "LaunchServices-Datenbank"
+        )
+
+    if auswahl in ("2", "3"):
+        if os.path.exists(ATSUTIL):
+            print("\n  Bereinige Schriften-Cache ...")
+            _sudo_ausfuehren(["sudo", ATSUTIL, "databases", "-remove"],
+                             "Schriften-Cache geloescht")
+            _sudo_ausfuehren(["sudo", ATSUTIL, "server", "-shutdown"],
+                             "Schriften-Server neugestartet")
+        else:
+            print("  atsutil nicht gefunden — Schriften-Cache kann nicht geleert werden.")
+
+    if auswahl == "0":
         print("  Abgebrochen.")
 
 # ── MENUES ────────────────────────────────────────────────────────────────────
@@ -1091,7 +1113,7 @@ def submenu_wartung():
         print("-"*50)
         print("  1  DNS-Cache leeren")
         print("  2  Spotlight neu indizieren")
-        print("  3  macOS-Wartungsskripte ausfuehren")
+        print("  3  macOS-Wartungsaufgaben  (LaunchServices, Schriften)")
         print("  4  System-Informationen anzeigen")
         print("  5  Sprachdateien bereinigen")
         print("  0  Zurueck")
