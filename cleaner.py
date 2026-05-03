@@ -757,6 +757,115 @@ def app_store_cache_bereinigen():
         print("  Nichts geloescht.")
 
 
+def crash_reports_bereinigen():
+    print("\nCrash Reports bereinigen ...\n")
+
+    orte = [
+        ("Benutzer-Crashes",  os.path.join(HOME, "Library/Logs/DiagnosticReports")),
+        ("Benutzer-Crashes (alt)", os.path.join(HOME, "Library/Logs/CrashReporter")),
+    ]
+
+    loeschbar = []
+    for label, pfad in orte:
+        if not os.path.exists(pfad):
+            continue
+        dateien = []
+        try:
+            for name in os.listdir(pfad):
+                fp = os.path.join(pfad, name)
+                if os.path.isfile(fp):
+                    try:
+                        groesse = os.path.getsize(fp)
+                        mtime = os.path.getmtime(fp)
+                        dateien.append((groesse, mtime, name, fp))
+                    except OSError:
+                        pass
+        except PermissionError:
+            pass
+        if not dateien:
+            continue
+        total = sum(g for g, _, _, _ in dateien)
+        print(f"  {label}: {len(dateien)} Dateien ({bytes_lesbar(total)})")
+        dateien.sort(key=lambda x: x[1], reverse=True)
+        for groesse, mtime, name, _ in dateien[:5]:
+            datum = datetime.fromtimestamp(mtime).strftime("%d.%m.%Y")
+            print(f"    {datum}  {bytes_lesbar(groesse):<10} {name}")
+        if len(dateien) > 5:
+            print(f"    ... ({len(dateien) - 5} weitere)")
+        loeschbar.append((label, total, pfad, dateien))
+
+    if not loeschbar:
+        print("  Keine Crash Reports gefunden.")
+        return
+
+    gesamt = sum(t for _, t, _, _ in loeschbar)
+    print(f"\n  Total: {bytes_lesbar(gesamt)}")
+
+    antwort = input("\n  Alle Crash Reports loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        for label, total, pfad, dateien in loeschbar:
+            geloescht = 0
+            for _, _, _, fp in dateien:
+                try:
+                    os.remove(fp)
+                    geloescht += 1
+                except Exception as e:
+                    print(f"  Fehler: {e}")
+            print(f"  {label}: {geloescht} Dateien geloescht")
+        print(f"\n  {bytes_lesbar(gesamt)} freigegeben.")
+    else:
+        print("  Nichts geloescht.")
+
+
+def installer_dateien_suchen():
+    print("\nInstaller-Dateien suchen  (.dmg, .pkg, .iso) ...\n")
+    print("  Analysiere Home-Verzeichnis ...")
+
+    ENDUNGEN = {".dmg", ".pkg", ".iso", ".mpkg"}
+    gefunden = []
+
+    for wurzel, ordner, dateien in os.walk(HOME):
+        ordner[:] = [o for o in ordner if not o.startswith(".")
+                     and o not in ["Library", "Applications"]]
+        for datei in dateien:
+            _, ext = os.path.splitext(datei.lower())
+            if ext not in ENDUNGEN:
+                continue
+            pfad = os.path.join(wurzel, datei)
+            try:
+                groesse = os.path.getsize(pfad)
+                mtime = os.path.getmtime(pfad)
+                alter_tage = (datetime.now().timestamp() - mtime) / 86400
+                gefunden.append((groesse, alter_tage, pfad))
+            except (OSError, PermissionError):
+                pass
+
+    if not gefunden:
+        print("  Keine Installer-Dateien gefunden.")
+        return
+
+    gefunden.sort(reverse=True)
+    total = sum(g for g, _, _ in gefunden)
+    print(f"  {len(gefunden)} Dateien, {bytes_lesbar(total)} gesamt\n")
+    print(f"  {'Groesse':<12} {'Alter':<10} Datei")
+    print(f"  {'-'*60}")
+    for groesse, tage, pfad in gefunden:
+        alter_str = f"{int(tage)}d" if tage < 365 else f"{tage/365:.1f}y"
+        print(f"  {bytes_lesbar(groesse):<12} {alter_str:<10} {pfad.replace(HOME, '~')}")
+
+    antwort = input("\n  Alle Installer-Dateien loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        for _, _, pfad in gefunden:
+            try:
+                os.remove(pfad)
+                print(f"  Geloescht: {pfad.replace(HOME, '~')}")
+            except Exception as e:
+                print(f"  Fehler: {e}")
+        print(f"\n  {bytes_lesbar(total)} freigegeben.")
+    else:
+        print("  Nichts geloescht.")
+
+
 def paketmanager_cache_bereinigen():
     print("\nPaketmanager-Caches analysieren ...\n")
 
@@ -943,6 +1052,94 @@ def mail_analysieren():
 
     print("\n  Tipp: Geloeschte Mails bereinigen in")
     print("  Mail > Postfach > Geloeschte Objekte entfernen.")
+
+def mail_anhaenge_analysieren():
+    print("\nMail-Anhaenge analysieren ...\n")
+
+    mail_pfad = os.path.join(HOME, "Library", "Mail")
+    if not os.path.exists(mail_pfad):
+        print("  Kein Mail-Ordner gefunden.")
+        return
+
+    print("  Suche Anhaenge (kann einen Moment dauern) ...")
+    anhaenge = []
+    for wurzel, ordner, dateien in os.walk(mail_pfad):
+        if "Attachments" not in wurzel.split(os.sep):
+            continue
+        for datei in dateien:
+            if datei.startswith("."):
+                continue
+            pfad = os.path.join(wurzel, datei)
+            try:
+                groesse = os.path.getsize(pfad)
+                if groesse > 0:
+                    anhaenge.append((groesse, pfad))
+            except (OSError, PermissionError):
+                pass
+
+    if not anhaenge:
+        print("  Keine Mail-Anhaenge gefunden.")
+        return
+
+    anhaenge.sort(reverse=True)
+    total = sum(g for g, _ in anhaenge)
+    print(f"  {len(anhaenge)} Anhaenge, {bytes_lesbar(total)} gesamt\n")
+
+    # Nach Typ gruppieren
+    typen = {}
+    for groesse, pfad in anhaenge:
+        ext = os.path.splitext(pfad)[1].lower() or "(kein)"
+        typen[ext] = typen.get(ext, 0) + groesse
+
+    print("  Nach Dateityp:")
+    for ext, groesse in sorted(typen.items(), key=lambda x: x[1], reverse=True)[:10]:
+        print(f"  {ext:<15} {bytes_lesbar(groesse)}")
+
+    print(f"\n  Groesste Anhaenge:")
+    for groesse, pfad in anhaenge[:10]:
+        print(f"  {bytes_lesbar(groesse):<12} {os.path.basename(pfad)}")
+
+    print("\n  Tipp: Mail-Anhaenge in Mail > Ablage > Anhaenge entfernen.")
+
+
+def time_machine_snapshots():
+    print("\nTime Machine Snapshots ...\n")
+
+    ergebnis = subprocess.run(
+        ["tmutil", "listlocalsnapshots", "/"],
+        capture_output=True, text=True
+    )
+    if ergebnis.returncode != 0 or not ergebnis.stdout.strip():
+        print("  Keine lokalen Snapshots gefunden.")
+        return
+
+    snapshots = [s.strip() for s in ergebnis.stdout.strip().splitlines() if s.strip()]
+    print(f"  {len(snapshots)} lokale Snapshots:\n")
+    for snap in snapshots:
+        # Format: com.apple.TimeMachine.2024-01-15-123456.local
+        datum = snap.replace("com.apple.TimeMachine.", "").replace(".local", "")
+        print(f"  • {datum}")
+
+    print(f"\n  Hinweis: Snapshots werden automatisch geloescht wenn")
+    print(f"  der Speicher knapp wird. Manuell loeschen via:")
+    print(f"  tmutil deletelocalsnapshots <datum>")
+
+    antwort = input("\n  Alle lokalen Snapshots loeschen? (j/n): ").strip().lower()
+    if antwort == "j":
+        for snap in snapshots:
+            datum = snap.replace("com.apple.TimeMachine.", "").replace(".local", "")
+            print(f"  Loesche {datum} ...")
+            r = subprocess.run(
+                ["tmutil", "deletelocalsnapshots", datum],
+                capture_output=True, text=True
+            )
+            if r.returncode == 0:
+                print(f"  Geloescht: {datum}")
+            else:
+                print(f"  Fehler: {r.stderr.strip()}")
+    else:
+        print("  Nichts geloescht.")
+
 
 def systeminfo_anzeigen():
     print("\nSystem-Informationen ...\n")
@@ -1232,6 +1429,81 @@ def ram_freigeben():
         print(f"  Freigegeben: {bytes_lesbar(gewonnen)}")
 
 
+def netzwerk_info():
+    print("\nNetzwerk-Informationen ...\n")
+
+    # Aktive Netzwerk-Interfaces
+    try:
+        ifconfig = subprocess.run(["ifconfig"], capture_output=True, text=True).stdout
+        aktiv = []
+        iface = None
+        for zeile in ifconfig.splitlines():
+            if not zeile.startswith("\t") and not zeile.startswith(" "):
+                iface = zeile.split(":")[0]
+            if iface and "inet " in zeile and "127.0.0.1" not in zeile:
+                ip = zeile.strip().split()[1]
+                aktiv.append((iface, ip))
+        if aktiv:
+            print("  IP-Adressen:")
+            for iface, ip in aktiv:
+                print(f"  {iface:<12} {ip}")
+    except Exception:
+        pass
+
+    # WiFi SSID
+    try:
+        for iface in ["en0", "en1"]:
+            r = subprocess.run(
+                ["/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport", "-I"],
+                capture_output=True, text=True
+            )
+            for zeile in r.stdout.splitlines():
+                if " SSID:" in zeile:
+                    ssid = zeile.split("SSID:")[1].strip()
+                    print(f"\n  WiFi SSID:   {ssid}")
+                    break
+            break
+    except Exception:
+        pass
+
+    # DNS-Server
+    try:
+        dns = subprocess.run(["scutil", "--dns"], capture_output=True, text=True).stdout
+        server = []
+        for zeile in dns.splitlines():
+            if "nameserver[" in zeile:
+                ip = zeile.split(":")[1].strip()
+                if ip not in server:
+                    server.append(ip)
+        if server:
+            print(f"\n  DNS-Server:  {', '.join(server[:3])}")
+    except Exception:
+        pass
+
+    # Standard-Gateway
+    try:
+        route = subprocess.run(["route", "get", "default"], capture_output=True, text=True).stdout
+        for zeile in route.splitlines():
+            if "gateway:" in zeile:
+                gw = zeile.split("gateway:")[1].strip()
+                print(f"  Gateway:     {gw}")
+                break
+    except Exception:
+        pass
+
+    # Offene Verbindungen (Anzahl)
+    try:
+        netstat = subprocess.run(
+            ["netstat", "-an", "-p", "tcp"],
+            capture_output=True, text=True
+        ).stdout
+        established = sum(1 for z in netstat.splitlines() if "ESTABLISHED" in z)
+        listen = sum(1 for z in netstat.splitlines() if "LISTEN" in z)
+        print(f"\n  TCP-Verbindungen: {established} aktiv, {listen} lauschend")
+    except Exception:
+        pass
+
+
 def datenschutz_bereinigen():
     print("\nDatensschutz-Caches bereinigen ...\n")
 
@@ -1294,6 +1566,8 @@ def submenu_bereinigung():
         print("  8  Paketmanager-Caches bereinigen  (npm, pip, yarn ...)")
         print("  9  Temporaere Dateien bereinigen")
         print("  A  App Store Cache bereinigen")
+        print("  B  Crash Reports loeschen")
+        print("  C  Installer-Dateien suchen  (.dmg, .pkg, .iso)")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -1317,6 +1591,10 @@ def submenu_bereinigung():
             temp_dateien_bereinigen()
         elif auswahl.upper() == "A":
             app_store_cache_bereinigen()
+        elif auswahl.upper() == "B":
+            crash_reports_bereinigen()
+        elif auswahl.upper() == "C":
+            installer_dateien_suchen()
         elif auswahl == "0":
             break
         else:
@@ -1337,6 +1615,8 @@ def submenu_leistung():
         print("  8  Mail-Ordner analysieren")
         print("  9  Duplikate suchen")
         print("  A  Leere Ordner finden und loeschen")
+        print("  B  Mail-Anhaenge analysieren")
+        print("  C  Time Machine Snapshots anzeigen")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -1360,6 +1640,10 @@ def submenu_leistung():
             duplikate_suchen()
         elif auswahl.upper() == "A":
             leere_ordner_finden()
+        elif auswahl.upper() == "B":
+            mail_anhaenge_analysieren()
+        elif auswahl.upper() == "C":
+            time_machine_snapshots()
         elif auswahl == "0":
             break
         else:
@@ -1377,6 +1661,7 @@ def submenu_wartung():
         print("  5  Sprachdateien bereinigen")
         print("  6  RAM freigeben  [sudo]")
         print("  7  Datenschutz-Caches bereinigen")
+        print("  8  Netzwerk-Informationen anzeigen")
         print("  0  Zurueck")
         print("-"*50)
         auswahl = input("  Auswahl: ").strip()
@@ -1394,6 +1679,8 @@ def submenu_wartung():
             ram_freigeben()
         elif auswahl == "7":
             datenschutz_bereinigen()
+        elif auswahl == "8":
+            netzwerk_info()
         elif auswahl == "0":
             break
         else:

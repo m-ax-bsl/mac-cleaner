@@ -37,6 +37,8 @@ mac-cleaner
 | Paketmanager-Caches bereinigen | npm, pip, yarn, gem, Cargo, Maven, Gradle u.a. |
 | Temporäre Dateien bereinigen | `/private/tmp` (eigene Dateien), TemporaryItems, CloudKit-Cache |
 | App Store Cache bereinigen | App Store Download- und StoreKit-Caches löschen |
+| Crash Reports löschen | Entfernt `.crash`-Dateien aus `~/Library/Logs/DiagnosticReports` |
+| Installer-Dateien suchen | Findet `.dmg`, `.pkg`, `.iso`-Dateien im Home-Verzeichnis |
 
 ### Leistung
 | Funktion | Beschreibung |
@@ -51,6 +53,8 @@ mac-cleaner
 | Mail-Ordner analysieren | Zeigt Grösse des Mail-Stores aufgeteilt nach Accounts |
 | Duplikate suchen | Findet identische Dateien via Grösse + MD5-Hash |
 | Leere Ordner finden | Sucht und löscht leere Verzeichnisse im Home-Ordner |
+| Mail-Anhänge analysieren | Zeigt Grösse und Typ aller heruntergeladenen Mail-Anhänge |
+| Time Machine Snapshots | Listet lokale Time Machine Snapshots, optional löschen |
 
 ### Wartung
 | Funktion | Beschreibung | sudo |
@@ -62,6 +66,7 @@ mac-cleaner
 | Sprachdateien bereinigen | Entfernt ungenutzte `.lproj`-Ordner aus App-Bundles | |
 | RAM freigeben | Leert den inaktiven RAM-Cache via `purge` | ✓ |
 | Datenschutz-Caches | QuickLook-Vorschau, Recents-Listen, Notification-Cache | |
+| Netzwerk-Informationen | IP, WiFi SSID, DNS-Server, Gateway, TCP-Verbindungen | |
 
 ## Sicherheit
 
