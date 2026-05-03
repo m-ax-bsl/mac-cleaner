@@ -54,7 +54,7 @@ mac-cleaner
 |---|---|---|
 | DNS-Cache leeren | `dscacheutil` + `mDNSResponder` Neustart | ✓ |
 | Spotlight neu indizieren | Löscht und rebuilt den Spotlight-Index | ✓ |
-| macOS-Wartungsskripte | `periodic daily weekly monthly` (macOS 14 und älter) | ✓ |
+| macOS-Wartungsaufgaben | LaunchServices-Datenbank neu aufbauen, Schriften-Cache bereinigen | ✓ |
 | System-Informationen | CPU, RAM, Akku, Uptime, Festplattennutzung | |
 | Sprachdateien bereinigen | Entfernt ungenutzte `.lproj`-Ordner aus App-Bundles | |
 
