@@ -34,6 +34,7 @@ mac-cleaner
 | Browser-Caches bereinigen | Safari, Chrome, Firefox, Arc, Brave, Edge u.a. |
 | iOS-Backups anzeigen | Zeigt Grösse und Datum aller iPhone/iPad-Backups |
 | Gespeicherte App-Zustände | Löscht Fenster-Snapshots aus `~/Library/Saved Application State` |
+| Paketmanager-Caches bereinigen | npm, pip, yarn, gem, Cargo, Maven, Gradle u.a. |
 
 ### Leistung
 | Funktion | Beschreibung |
@@ -44,6 +45,8 @@ mac-cleaner
 | Downloads analysieren | Zeigt Dateien nach Grösse und Alter, markiert Einträge über 90 Tage |
 | Festplattennutzung anzeigen | Übersicht der grössten Ordner im Home-Verzeichnis mit Balkendiagramm |
 | App deinstallieren | Findet alle Dateien einer App in Library-Ordnern und löscht sie |
+| Alte Dateien suchen | Listet Dateien, die seit über einem Jahr nicht verändert wurden |
+| Mail-Ordner analysieren | Zeigt Grösse des Mail-Stores aufgeteilt nach Accounts |
 
 ### Wartung
 | Funktion | Beschreibung | sudo |
